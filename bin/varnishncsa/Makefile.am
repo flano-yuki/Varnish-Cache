@@ -1,32 +1,39 @@
 #
 
-AM_CPPFLAGS = \
+bin_varnishncsa_varnishncsa_CPPFLAGS = \
 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/bin/varnishncsa \
 	-I$(top_builddir)/include
 
-bin_PROGRAMS = varnishncsa
+bin_PROGRAMS += bin/varnishncsa/varnishncsa
 
-varnishncsa_SOURCES = \
-	varnishncsa.c \
-	varnishncsa_options.h \
-	varnishncsa_options.c \
-	base64.h \
-	base64.c \
-	$(top_srcdir)/lib/libvarnishtools/vut.c \
-	$(top_srcdir)/lib/libvarnish/vas.c \
-	$(top_srcdir)/lib/libvarnish/flopen.c \
-	$(top_srcdir)/lib/libvarnish/version.c \
-	$(top_srcdir)/lib/libvarnish/vpf.c \
-	$(top_srcdir)/lib/libvarnish/vtim.c \
-	$(top_srcdir)/lib/libvarnish/vsb.c
+bin_varnishncsa_varnishncsa_SOURCES = \
+	bin/varnishncsa/varnishncsa.c \
+	bin/varnishncsa/varnishncsa_options.h \
+	bin/varnishncsa/varnishncsa_options.c \
+	bin/varnishncsa/base64.h \
+	bin/varnishncsa/base64.c \
+	lib/libvarnishtools/vut.c \
+	lib/libvarnish/vas.c \
+	lib/libvarnish/flopen.c \
+	lib/libvarnish/version.c \
+	lib/libvarnish/vpf.c \
+	lib/libvarnish/vtim.c \
+	lib/libvarnish/vsb.c
 
-varnishncsa_LDADD = \
-	$(top_builddir)/lib/libvarnishcompat/libvarnishcompat.la \
-	$(top_builddir)/lib/libvarnishapi/libvarnishapi.la \
+bin_varnishncsa_varnishncsa_LDADD = \
+	lib/libvarnishcompat/libvarnishcompat.la \
+	lib/libvarnishapi/libvarnishapi.la \
 	${RT_LIBS} ${LIBM}
 
-noinst_PROGRAMS = varnishncsa_opt2rst
-varnishncsa_opt2rst_SOURCES = \
-	varnishncsa_options.h \
-	varnishncsa_options.c \
-	$(top_srcdir)/lib/libvarnishtools/opt2rst.c
+noinst_PROGRAMS += bin/varnishncsa/varnishncsa_opt2rst
+
+bin_varnishncsa_varnishncsa_opt2rst_CPPFLAGS = \
+	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/bin/varnishncsa \
+	-I$(top_builddir)/include
+
+bin_varnishncsa_varnishncsa_opt2rst_SOURCES = \
+	bin/varnishncsa/varnishncsa_options.h \
+	bin/varnishncsa/varnishncsa_options.c \
+	lib/libvarnishtools/opt2rst.c

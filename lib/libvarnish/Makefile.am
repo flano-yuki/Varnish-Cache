@@ -1,53 +1,56 @@
-AM_CPPFLAGS = \
+lib_libvarnish_libvarnish_la_CPPFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_builddir)/include \
 	@PCRE_CFLAGS@
 
-AM_LDFLAGS  = $(AM_LT_LDFLAGS)
+pkglib_LTLIBRARIES += lib/libvarnish/libvarnish.la
 
-pkglib_LTLIBRARIES = libvarnish.la
+lib_libvarnish_libvarnish_la_LDFLAGS = $(AM_LT_LDFLAGS) -avoid-version
 
-libvarnish_la_LDFLAGS = $(AM_LDFLAGS) -avoid-version
+lib_libvarnish_libvarnish_la_SOURCES = \
+	lib/libvarnish/vav.c \
+	lib/libvarnish/vas.c \
+	lib/libvarnish/binary_heap.c \
+	lib/libvarnish/vsub.c \
+	lib/libvarnish/cli_auth.c \
+	lib/libvarnish/cli_common.c \
+	lib/libvarnish/cli_serve.c \
+	lib/libvarnish/flopen.c \
+	lib/libvarnish/vnum.c \
+	lib/libvarnish/vtim.c \
+	lib/libvarnish/vtcp.c \
+	lib/libvarnish/vct.c \
+	lib/libvarnish/version.c \
+	lib/libvarnish/vev.c \
+	lib/libvarnish/vfil.c \
+	lib/libvarnish/vin.c \
+	lib/libvarnish/vlu.c \
+	lib/libvarnish/vmb.c \
+	lib/libvarnish/vpf.c \
+	lib/libvarnish/vre.c \
+	lib/libvarnish/vrnd.c \
+	lib/libvarnish/vsa.c \
+	lib/libvarnish/vsb.c \
+	lib/libvarnish/vsha256.c \
+	lib/libvarnish/vss.c
 
-libvarnish_la_SOURCES = \
-	vav.c \
-	vas.c \
-	binary_heap.c \
-	vsub.c \
-	cli_auth.c \
-	cli_common.c \
-	cli_serve.c \
-	flopen.c \
-	vnum.c \
-	vtim.c \
-	vtcp.c \
-	vct.c \
-	version.c \
-	vev.c \
-	vfil.c \
-	vin.c \
-	vlu.c \
-	vmb.c \
-	vpf.c \
-	vre.c \
-	vrnd.c \
-	vsa.c \
-	vsb.c \
-	vsha256.c \
-	vss.c
-
-libvarnish_la_CFLAGS = -DVARNISH_STATE_DIR='"${VARNISH_STATE_DIR}"'
-libvarnish_la_LIBADD = ${RT_LIBS} ${NET_LIBS} ${LIBM} @PCRE_LIBS@
+lib_libvarnish_libvarnish_la_CFLAGS = -DVARNISH_STATE_DIR='"${VARNISH_STATE_DIR}"'
+lib_libvarnish_libvarnish_la_LIBADD = ${RT_LIBS} ${NET_LIBS} ${LIBM} @PCRE_LIBS@
 
 if ENABLE_TESTS
-TESTS = vnum_c_test
+TESTS += lib/libvarnish/vnum_c_test
 
-noinst_PROGRAMS = ${TESTS}
+noinst_PROGRAMS += lib/libvarnish/vnum_c_test
 
-vnum_c_test_SOURCES = vnum.c vas.c
-vnum_c_test_CFLAGS = -DNUM_C_TEST -include config.h
-vnum_c_test_LDADD = ${LIBM}
+lib_libvarnish_vnum_c_test_CPPFLAGS = \
+	-I$(top_srcdir)/include \
+	-I$(top_builddir)/include \
+	@PCRE_CFLAGS@
 
-test: ${TESTS}
+lib_libvarnish_vnum_c_test_SOURCES = lib/libvarnish/vnum.c lib/libvarnish/vas.c
+lib_libvarnish_vnum_c_test_CFLAGS = -DNUM_C_TEST -include config.h
+lib_libvarnish_vnum_c_test_LDADD = ${LIBM}
+
+test: lib/libvarnish/vnum_c_test
 	@for test in ${TESTS} ; do ./$${test} ; done
 endif

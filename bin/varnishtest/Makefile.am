@@ -1,51 +1,50 @@
 #
 
-VTC_LOG_COMPILER = ./varnishtest -v -i
+VTC_LOG_COMPILER = bin/varnishtest/varnishtest -v -i
 TEST_EXTENSIONS = .vtc
 TESTS = @VTC_TESTS@
 
-# Make sure we run check-local first
-check: check-am check-local
-check-am: check-local
+check: lib/libvmod_debug/libvmod_debug.la verify-tests-list
 # See if list of checks have changed, recheck
-check-local:
-	if [ "$$(cd $(srcdir) && echo tests/*.vtc)" != "@VTC_TESTS@" ]; then \
-		cd $(top_builddir) && ./config.status --recheck ; \
+verify-tests-list :
+	if [ "$$(cd $(top_srcdir) && echo bin/varnishtest/tests/*.vtc)" != "@VTC_TESTS@" ]; then \
+		./config.status --recheck ; \
 	fi
 
-DISTCLEANFILES = _.ok
+DISTCLEANFILES += bin/varnishtest/_.ok
 
-AM_CPPFLAGS = \
+
+bin_varnishtest_varnishtest_CPPFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_builddir)/include \
 	-I$(top_srcdir)/lib/libvgz
 
-bin_PROGRAMS =	varnishtest
+bin_PROGRAMS +=	bin/varnishtest/varnishtest
 
-varnishtest_SOURCES = \
-		vtc.c \
-		vtc.h \
-		vmods.h \
-		programs.h \
-		vtc_client.c \
-		vtc_http.c \
-		vtc_main.c \
-		vtc_log.c \
-		vtc_sema.c \
-		vtc_server.c \
-		vtc_varnish.c \
-		vtc_logexp.c \
-		vtc_process.c
+bin_varnishtest_varnishtest_SOURCES = \
+		bin/varnishtest/vtc.c \
+		bin/varnishtest/vtc.h \
+		bin/varnishtest/vmods.h \
+		bin/varnishtest/programs.h \
+		bin/varnishtest/vtc_client.c \
+		bin/varnishtest/vtc_http.c \
+		bin/varnishtest/vtc_main.c \
+		bin/varnishtest/vtc_log.c \
+		bin/varnishtest/vtc_sema.c \
+		bin/varnishtest/vtc_server.c \
+		bin/varnishtest/vtc_varnish.c \
+		bin/varnishtest/vtc_logexp.c \
+		bin/varnishtest/vtc_process.c
 
-varnishtest_LDADD = \
+bin_varnishtest_varnishtest_LDADD = \
 		$(top_builddir)/lib/libvarnish/libvarnish.la \
 		$(top_builddir)/lib/libvarnishcompat/libvarnishcompat.la \
 		$(top_builddir)/lib/libvarnishapi/libvarnishapi.la \
 		$(top_builddir)/lib/libvgz/libvgz.la \
 		${LIBM} ${PTHREAD_LIBS}
 
-varnishtest_CFLAGS = \
+bin_varnishtest_varnishtest_CFLAGS = \
 		-DTOP_BUILDDIR='"${top_builddir}"'
 
-EXTRA_DIST = $(top_srcdir)/bin/varnishtest/tests/*.vtc \
+EXTRA_DIST += @VTC_TESTS@ \
 	$(top_srcdir)/bin/varnishtest/tests/README

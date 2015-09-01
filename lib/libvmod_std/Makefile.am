@@ -1,38 +1,41 @@
 #
 
-AM_LDFLAGS  = $(AM_LT_LDFLAGS)
-
-AM_CPPFLAGS = \
+lib_libvmod_std_libvmod_std_la_CPPFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/bin/varnishd \
-	-I$(top_builddir)/include
+	-I$(top_builddir)/include \
+	-I$(top_builddir)/lib/libvmod_std
 
-vmoddir = $(pkglibdir)/vmods
-vmod_srcdir = $(top_srcdir)/lib/libvmod_std
-vmodtool = $(top_srcdir)/lib/libvcc/vmodtool.py
-vmodtoolargs = --strict
-vmod_LTLIBRARIES = libvmod_std.la
+vmod_LTLIBRARIES += lib/libvmod_std/libvmod_std.la
 
-libvmod_std_la_LDFLAGS = $(AM_LDFLAGS) -module -export-dynamic -avoid-version -shared
+lib_libvmod_std_libvmod_std_la_LDFLAGS = $(AM_LT_LDFLAGS) -module -export-dynamic -avoid-version -shared
 
-libvmod_std_la_SOURCES = \
-	vmod_std.c \
-	vmod_std_conversions.c \
-	vmod_std_fileread.c \
-	vmod_std_querysort.c
+lib_libvmod_std_libvmod_std_la_SOURCES = \
+	lib/libvmod_std/vmod_std.c \
+	lib/libvmod_std/vmod_std_conversions.c \
+	lib/libvmod_std/vmod_std_fileread.c \
+	lib/libvmod_std/vmod_std_querysort.c
 
-nodist_libvmod_std_la_SOURCES = \
-	vcc_if.c \
-	vcc_if.h
+nodist_lib_libvmod_std_libvmod_std_la_SOURCES = \
+	lib/libvmod_std/vcc_if.c \
+	lib/libvmod_std/vcc_if.h
 
-# BUILT_SOURCES is only a hack and dependency tracking does not help for the first build
-$(libvmod_std_la_OBJECTS): vcc_if.h
+lib/libvmod_std/lib_libvmod_std_libvmod_std_la-vmod_vcc_if.$(OBJEXT) : include/vmod_abi.h
 
-vcc_if.c vcc_if.h vmod_std.rst vmod_std.man.rst: $(vmodtool) $(vmod_srcdir)/vmod.vcc
-	@PYTHON@ $(vmodtool) $(vmodtoolargs) $(vmod_srcdir)/vmod.vcc
+$(lib_libvmod_std_libvmod_std_la_OBJECTS) : lib/libvmod_std/vcc_if.h include/tbl/vcl_returns.h
 
-EXTRA_DIST = vmod.vcc
+# stupid hack to run vmodtool only once
+lib/libvmod_std/vcc_if.c \
+	lib/libvmod_std/vmod_std.rst \
+	lib/libvmod_std/vmod_std.man.rst : lib/libvmod_std/vcc_if.h
+	@#
 
-CLEANFILES = $(builddir)/vcc_if.c $(builddir)/vcc_if.h \
-	$(builddir)/vmod_std.rst \
-	$(builddir)/vmod_std.man.rst
+lib/libvmod_std/vcc_if.h: $(vmodtool) lib/libvmod_std/vmod.vcc
+	cd lib/libvmod_std/ && @PYTHON@ ../../$(vmodtool) $(vmodtoolargs) $(abs_top_srcdir)/lib/libvmod_std/vmod.vcc
+
+EXTRA_DIST += lib/libvmod_std/vmod.vcc
+
+CLEANFILES +=  lib/libvmod_std/vcc_if.c  lib/libvmod_std/vcc_if.h \
+	lib/libvmod_std/vmod_std.rst \
+	lib/libvmod_std/vmod_std.man.rst
+	

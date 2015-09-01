@@ -16,7 +16,7 @@ AC_CANONICAL_SYSTEM
 AC_LANG(C)
 
 AM_MAINTAINER_MODE([disable])
-AM_INIT_AUTOMAKE([1.11 foreign color-tests parallel-tests])
+AM_INIT_AUTOMAKE([1.11 foreign color-tests parallel-tests subdir-objects])
 AM_SILENT_RULES([yes])
 AC_DISABLE_STATIC
 AC_PROG_LIBTOOL
@@ -623,7 +623,7 @@ if test "$enable_pcre_jit" = yes; then
 fi
 
 # Stupid automake needs this
-VTC_TESTS="$(cd $srcdir/bin/varnishtest && echo tests/*.vtc)"
+VTC_TESTS="$(cd ${srcdir} && echo bin/varnishtest/tests/*.vtc)"
 AC_SUBST(VTC_TESTS)
 
 # Make sure this include dir exists
@@ -632,32 +632,7 @@ AC_CONFIG_COMMANDS([mkdir], [$MKDIR_P doc/sphinx/include])
 # Generate output
 AC_CONFIG_FILES([
     Makefile
-    bin/Makefile
-    bin/varnishadm/Makefile
-    bin/varnishd/Makefile
-    bin/varnishlog/Makefile
-    bin/varnishstat/Makefile
-    bin/varnishtop/Makefile
-    bin/varnishhist/Makefile
-    bin/varnishtest/Makefile
-    bin/varnishncsa/Makefile
-    doc/Makefile
-    doc/graphviz/Makefile
-    doc/sphinx/Makefile
     doc/sphinx/conf.py
-    etc/Makefile
-    include/Makefile
-    lib/Makefile
-    lib/libvarnish/Makefile
-    lib/libvarnishapi/Makefile
-    lib/libvarnishtools/Makefile
-    lib/libvarnishcompat/Makefile
-    lib/libvcc/Makefile
-    lib/libvgz/Makefile
-    lib/libvmod_debug/Makefile
-    lib/libvmod_std/Makefile
-    lib/libvmod_directors/Makefile
-    man/Makefile
     varnishapi.pc
     varnishapi-uninstalled.pc
 ])

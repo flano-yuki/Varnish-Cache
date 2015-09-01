@@ -1,138 +1,164 @@
 #
 
-AM_CPPFLAGS = \
+bin_varnishd_varnishd_CPPFLAGS = \
+	-I$(top_srcdir)/bin/varnishd \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libvgz \
 	-I$(top_builddir)/bin/varnishd \
 	-I$(top_builddir)/include
 
-sbin_PROGRAMS = varnishd
+sbin_PROGRAMS += bin/varnishd/varnishd
 
-varnishd_SOURCES = \
-	cache/cache_acceptor.c \
-	cache/cache_backend.c \
-	cache/cache_backend_cfg.c \
-	cache/cache_backend_probe.c \
-	cache/cache_backend_tcp.c \
-	cache/cache_ban.c \
-	cache/cache_busyobj.c \
-	cache/cache_cli.c \
-	cache/cache_deliver_proc.c \
-	cache/cache_director.c \
-	cache/cache_esi_deliver.c \
-	cache/cache_esi_fetch.c \
-	cache/cache_esi_parse.c \
-	cache/cache_expire.c \
-	cache/cache_fetch.c \
-	cache/cache_fetch_proc.c \
-	cache/cache_gzip.c \
-	cache/cache_hash.c \
-	cache/cache_http.c \
-	cache/cache_lck.c \
-	cache/cache_main.c \
-	cache/cache_mempool.c \
-	cache/cache_obj.c \
-	cache/cache_panic.c \
-	cache/cache_pool.c \
-	cache/cache_req.c \
-	cache/cache_req_body.c \
-	cache/cache_req_fsm.c \
-	cache/cache_rfc2616.c \
-	cache/cache_range.c \
-	cache/cache_session.c \
-	cache/cache_shmlog.c \
-	cache/cache_vary.c \
-	cache/cache_vcl.c \
-	cache/cache_vrt.c \
-	cache/cache_vrt_priv.c \
-	cache/cache_vrt_re.c \
-	cache/cache_vrt_var.c \
-	cache/cache_vrt_vmod.c \
-	cache/cache_wrk.c \
-	cache/cache_ws.c \
-	common/common_vsm.c \
-	common/common_vsc.c \
-	hash/hash_classic.c \
-	hash/hash_critbit.c \
-	hash/mgt_hash.c \
-	hash/hash_simple_list.c \
-	http1/cache_http1_deliver.c \
-	http1/cache_http1_fetch.c \
-	http1/cache_http1_fsm.c \
-	http1/cache_http1_line.c \
-	http1/cache_http1_pipe.c \
-	http1/cache_http1_proto.c \
-	http1/cache_http1_vfp.c \
-	mgt/mgt_acceptor.c \
-	mgt/mgt_child.c \
-	mgt/mgt_cli.c \
-	mgt/mgt_jail.c \
-	mgt/mgt_jail_unix.c \
-	mgt/mgt_jail_solaris.c \
-	mgt/mgt_main.c \
-	mgt/mgt_param.c \
-	mgt/mgt_param_tbl.c \
-	mgt/mgt_param_bits.c \
-	mgt/mgt_param_tcp.c \
-	mgt/mgt_param_tweak.c \
-	mgt/mgt_pool.c \
-	mgt/mgt_shmem.c \
-	mgt/mgt_vcc.c \
-	mgt/mgt_vcl.c \
-	proxy/cache_proxy_proto.c \
-	storage/stevedore.c \
-	storage/mgt_stevedore.c \
-	storage/stevedore_utils.c \
-	storage/storage_file.c \
-	storage/storage_malloc.c \
-	storage/storage_persistent.c \
-	storage/mgt_storage_persistent.c \
-	storage/storage_persistent_silo.c \
-	storage/storage_persistent_subr.c \
-	storage/storage_umem.c \
-	waiter/mgt_waiter.c \
-	waiter/cache_waiter.c \
-	waiter/cache_waiter_epoll.c \
-	waiter/cache_waiter_kqueue.c \
-	waiter/cache_waiter_poll.c \
-	waiter/cache_waiter_ports.c 
+bin_varnishd_varnishd_SOURCES = \
+	bin/varnishd/cache/cache_acceptor.c \
+	bin/varnishd/cache/cache_backend.c \
+	bin/varnishd/cache/cache_backend_cfg.c \
+	bin/varnishd/cache/cache_backend_probe.c \
+	bin/varnishd/cache/cache_backend_tcp.c \
+	bin/varnishd/cache/cache_ban.c \
+	bin/varnishd/cache/cache_busyobj.c \
+	bin/varnishd/cache/cache_cli.c \
+	bin/varnishd/cache/cache_deliver_proc.c \
+	bin/varnishd/cache/cache_director.c \
+	bin/varnishd/cache/cache_esi_deliver.c \
+	bin/varnishd/cache/cache_esi_fetch.c \
+	bin/varnishd/cache/cache_esi_parse.c \
+	bin/varnishd/cache/cache_expire.c \
+	bin/varnishd/cache/cache_fetch.c \
+	bin/varnishd/cache/cache_fetch_proc.c \
+	bin/varnishd/cache/cache_gzip.c \
+	bin/varnishd/cache/cache_hash.c \
+	bin/varnishd/cache/cache_http.c \
+	bin/varnishd/cache/cache_lck.c \
+	bin/varnishd/cache/cache_main.c \
+	bin/varnishd/cache/cache_mempool.c \
+	bin/varnishd/cache/cache_obj.c \
+	bin/varnishd/cache/cache_panic.c \
+	bin/varnishd/cache/cache_pool.c \
+	bin/varnishd/cache/cache_req.c \
+	bin/varnishd/cache/cache_req_body.c \
+	bin/varnishd/cache/cache_req_fsm.c \
+	bin/varnishd/cache/cache_rfc2616.c \
+	bin/varnishd/cache/cache_range.c \
+	bin/varnishd/cache/cache_session.c \
+	bin/varnishd/cache/cache_shmlog.c \
+	bin/varnishd/cache/cache_vary.c \
+	bin/varnishd/cache/cache_vcl.c \
+	bin/varnishd/cache/cache_vrt.c \
+	bin/varnishd/cache/cache_vrt_priv.c \
+	bin/varnishd/cache/cache_vrt_re.c \
+	bin/varnishd/cache/cache_vrt_var.c \
+	bin/varnishd/cache/cache_vrt_vmod.c \
+	bin/varnishd/cache/cache_wrk.c \
+	bin/varnishd/cache/cache_ws.c \
+	bin/varnishd/common/common_vsm.c \
+	bin/varnishd/common/common_vsc.c \
+	bin/varnishd/hash/hash_classic.c \
+	bin/varnishd/hash/hash_critbit.c \
+	bin/varnishd/hash/mgt_hash.c \
+	bin/varnishd/hash/hash_simple_list.c \
+	bin/varnishd/http1/cache_http1_deliver.c \
+	bin/varnishd/http1/cache_http1_fetch.c \
+	bin/varnishd/http1/cache_http1_fsm.c \
+	bin/varnishd/http1/cache_http1_line.c \
+	bin/varnishd/http1/cache_http1_pipe.c \
+	bin/varnishd/http1/cache_http1_proto.c \
+	bin/varnishd/http1/cache_http1_vfp.c \
+	bin/varnishd/mgt/mgt_acceptor.c \
+	bin/varnishd/mgt/mgt_child.c \
+	bin/varnishd/mgt/mgt_cli.c \
+	bin/varnishd/mgt/mgt_jail.c \
+	bin/varnishd/mgt/mgt_jail_unix.c \
+	bin/varnishd/mgt/mgt_jail_solaris.c \
+	bin/varnishd/mgt/mgt_main.c \
+	bin/varnishd/mgt/mgt_param.c \
+	bin/varnishd/mgt/mgt_param_tbl.c \
+	bin/varnishd/mgt/mgt_param_bits.c \
+	bin/varnishd/mgt/mgt_param_tcp.c \
+	bin/varnishd/mgt/mgt_param_tweak.c \
+	bin/varnishd/mgt/mgt_pool.c \
+	bin/varnishd/mgt/mgt_shmem.c \
+	bin/varnishd/mgt/mgt_vcc.c \
+	bin/varnishd/mgt/mgt_vcl.c \
+	bin/varnishd/proxy/cache_proxy_proto.c \
+	bin/varnishd/storage/stevedore.c \
+	bin/varnishd/storage/mgt_stevedore.c \
+	bin/varnishd/storage/stevedore_utils.c \
+	bin/varnishd/storage/storage_file.c \
+	bin/varnishd/storage/storage_malloc.c \
+	bin/varnishd/storage/storage_persistent.c \
+	bin/varnishd/storage/mgt_storage_persistent.c \
+	bin/varnishd/storage/storage_persistent_silo.c \
+	bin/varnishd/storage/storage_persistent_subr.c \
+	bin/varnishd/storage/storage_umem.c \
+	bin/varnishd/waiter/mgt_waiter.c \
+	bin/varnishd/waiter/cache_waiter.c \
+	bin/varnishd/waiter/cache_waiter_epoll.c \
+	bin/varnishd/waiter/cache_waiter_kqueue.c \
+	bin/varnishd/waiter/cache_waiter_poll.c \
+	bin/varnishd/waiter/cache_waiter_ports.c 
 
-noinst_HEADERS = \
-	builtin_vcl.h \
-	cache/cache_esi.h \
-	cache/cache_pool.h \
-	cache/cache_priv.h \
-	common/heritage.h \
-	hash/hash_slinger.h \
-	http1/cache_http1.h \
-	mgt/mgt.h \
-	mgt/mgt_cli.h \
-	mgt/mgt_param.h \
-	storage/storage.h \
-	storage/storage_persistent.h \
-	waiter/waiter_priv.h \
-	waiter/mgt_waiter.h
+noinst_HEADERS += \
+	bin/varnishd/builtin_vcl.h \
+	bin/varnishd/cache/cache_esi.h \
+	bin/varnishd/cache/cache_pool.h \
+	bin/varnishd/cache/cache_priv.h \
+	bin/varnishd/common/heritage.h \
+	bin/varnishd/hash/hash_slinger.h \
+	bin/varnishd/http1/cache_http1.h \
+	bin/varnishd/mgt/mgt.h \
+	bin/varnishd/mgt/mgt_cli.h \
+	bin/varnishd/mgt/mgt_param.h \
+	bin/varnishd/storage/storage.h \
+	bin/varnishd/storage/storage_persistent.h \
+	bin/varnishd/waiter/waiter_priv.h \
+	bin/varnishd/waiter/mgt_waiter.h
 
 # Headers for use with vmods
-nobase_pkginclude_HEADERS = \
-	cache/cache.h \
-	cache/cache_filter.h \
-	cache/cache_backend.h \
-	cache/cache_director.h \
-	common/common.h \
-	common/params.h \
-	waiter/waiter.h
+public_varnishd_headers = \
+	bin/varnishd/cache/cache.h \
+	bin/varnishd/cache/cache_filter.h \
+	bin/varnishd/cache/cache_backend.h \
+	bin/varnishd/cache/cache_director.h \
+	bin/varnishd/common/common.h \
+	bin/varnishd/common/params.h \
+	bin/varnishd/waiter/waiter.h
 
-varnishd_CFLAGS = \
+# This saddens me, but nobase will strip the path completely
+# and we want to change 'bin/varnishd/' to 'varnish/cache/'
+# XXX one mkdir per file is wasteful, but we won't risk
+# forgetting subdirs
+install-data-local: install-public-varnishd-headers
+install-public-varnishd-headers:
+	for i in $(public_varnishd_headers); do \
+		h_dir="$$(dirname $(DESTDIR)$(includedir)/varnish`echo $$i |sed s@bin/varnishd@@`)"; \
+		$(install_sh) -d -m 0755 $$h_dir; \
+		$(INSTALL_HEADER) $(srcdir)/$$i $$h_dir; \
+	done
+
+#		chmod +w $$(dirname $(includedir)/`echo $$i |
+#		            sed s@bin/varnishd@varnish@`);
+uninstall-hook: uninstall-public-varnishd-headers 
+uninstall-public-varnishd-headers :
+	for i in $(public_varnishd_headers); do \
+		rm -f $(DESTDIR)$(includedir)/`echo $$i | \
+			sed s@bin/varnishd@varnish@`; \
+	done
+
+.PHONY: install-public-varnishd-headers uninstall-public-varnishd-headers
+
+EXTRA_DIST += $(public_varnishd_headers)
+
+bin_varnishd_varnishd_CFLAGS = \
 	@PCRE_CFLAGS@ \
 	-DVARNISHD_IS_NOT_A_VMOD \
         -DVARNISH_STATE_DIR='"${VARNISH_STATE_DIR}"' \
 	-DVARNISH_VMOD_DIR='"${pkglibdir}/vmods"' \
 	-DVARNISH_VCL_DIR='"${varnishconfdir}"'
 
-varnishd_LDFLAGS = -export-dynamic
+bin_varnishd_varnishd_LDFLAGS = -export-dynamic
 
-varnishd_LDADD = \
+bin_varnishd_varnishd_LDADD = \
 	$(top_builddir)/lib/libvarnish/libvarnish.la \
 	$(top_builddir)/lib/libvarnishcompat/libvarnishcompat.la \
 	$(top_builddir)/lib/libvcc/libvcc.la \
@@ -141,13 +167,15 @@ varnishd_LDADD = \
 	@PCRE_LIBS@ \
 	${DL_LIBS} ${PTHREAD_LIBS} ${NET_LIBS} ${LIBM} ${LIBUMEM}
 
-EXTRA_DIST = builtin.vcl
-DISTCLEANFILES = builtin_vcl.h
+$(bin_varnishd_varnishd_OBJECTS) : include/tbl/vcl_returns.h
+
+EXTRA_DIST += bin/varnishd/builtin.vcl
+DISTCLEANFILES += bin/varnishd/builtin_vcl.h
 
 #
 # Turn the builtin.vcl file into a C-string we can include in the program.
 #
-builtin_vcl.h:	builtin.vcl
+bin/varnishd/builtin_vcl.h:	bin/varnishd/builtin.vcl
 	echo '/*' > $@
 	echo ' * NB:  This file is machine generated, DO NOT EDIT!' >> $@
 	echo ' *' >> $@
@@ -157,7 +185,7 @@ builtin_vcl.h:	builtin.vcl
 	echo '' >> $@
 	sed -e 's/"/\\"/g' \
 	    -e 's/$$/\\n"/' \
-	    -e 's/^/ "/' $(srcdir)/builtin.vcl >> $@
+	    -e 's/^/ "/' $(srcdir)/bin/varnishd/builtin.vcl >> $@
 
 # Explicitly record dependency
-mgt/mgt_vcc.c:	builtin_vcl.h
+bin/varnishd/mgt/mgt_vcc.c:	bin/varnishd/builtin_vcl.h

@@ -1,30 +1,35 @@
 #
 
-AM_CPPFLAGS = \
+bin_varnishtop_varnishtop_CPPFLAGS = \
 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/bin/varnishtop \
 	-I$(top_builddir)/include
 
-bin_PROGRAMS = varnishtop
+bin_PROGRAMS += bin/varnishtop/varnishtop
 
-varnishtop_SOURCES = varnishtop.c \
-	varnishtop_options.h \
-	varnishtop_options.c \
-	$(top_srcdir)/lib/libvarnishtools/vut.c \
-	$(top_srcdir)/lib/libvarnish/vas.c \
-	$(top_srcdir)/lib/libvarnish/flopen.c \
-	$(top_srcdir)/lib/libvarnish/version.c \
-	$(top_srcdir)/lib/libvarnish/vpf.c \
-	$(top_srcdir)/lib/libvarnish/vtim.c \
-	$(top_srcdir)/lib/libvarnish/vsb.c
+bin_varnishtop_varnishtop_SOURCES = bin/varnishtop/varnishtop.c \
+	bin/varnishtop/varnishtop_options.h \
+	bin/varnishtop/varnishtop_options.c \
+	lib/libvarnishtools/vut.c \
+	lib/libvarnish/vas.c \
+	lib/libvarnish/flopen.c \
+	lib/libvarnish/version.c \
+	lib/libvarnish/vpf.c \
+	lib/libvarnish/vtim.c \
+	lib/libvarnish/vsb.c
 
-
-varnishtop_LDADD = \
+bin_varnishtop_varnishtop_LDADD = \
 	$(top_builddir)/lib/libvarnishcompat/libvarnishcompat.la \
 	$(top_builddir)/lib/libvarnishapi/libvarnishapi.la \
 	@CURSES_LIB@ ${RT_LIBS} ${LIBM} ${PTHREAD_LIBS}
 
-noinst_PROGRAMS = varnishtop_opt2rst
-varnishtop_opt2rst_SOURCES = \
-	varnishtop_options.h \
-	varnishtop_options.c \
-	$(top_srcdir)/lib/libvarnishtools/opt2rst.c
+noinst_PROGRAMS += bin/varnishtop/varnishtop_opt2rst
+bin_varnishtop_varnishtop_opt2rst_SOURCES = \
+	bin/varnishtop/varnishtop_options.h \
+	bin/varnishtop/varnishtop_options.c \
+	lib/libvarnishtools/opt2rst.c
+
+bin_varnishtop_varnishtop_opt2rst_CPPFLAGS = \
+	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/bin/varnishtop \
+	-I$(top_builddir)/include

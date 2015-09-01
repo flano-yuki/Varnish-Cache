@@ -1,37 +1,38 @@
 #
-AM_LDFLAGS  = $(AM_LT_LDFLAGS)
 
-AM_CPPFLAGS = \
+
+lib_libvmod_debug_libvmod_debug_la_CPPFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/bin/varnishd \
-	-I$(top_builddir)/include
+	-I$(top_builddir)/include \
+	-I$(top_builddir)/lib/libvmod_debug
 
-vmoddir = $(pkglibdir)/vmods
-vmod_srcdir = $(top_srcdir)/lib/libvmod_debug
-vmodtool = $(top_srcdir)/lib/libvcc/vmodtool.py
-vmodtoolargs = --strict
+noinst_LTLIBRARIES += lib/libvmod_debug/libvmod_debug.la
 
-noinst_LTLIBRARIES = libvmod_debug.la
+lib_libvmod_debug_libvmod_debug_la_LDFLAGS = $(AM_LT_LDFLAGS) -module -export-dynamic -avoid-version -shared -rpath $(abs_builddir)
 
-libvmod_debug_la_LDFLAGS = $(AM_LDFLAGS) -module -export-dynamic -avoid-version -shared -rpath /nowhere
+lib_libvmod_debug_libvmod_debug_la_SOURCES = \
+	lib/libvmod_debug/vmod_debug.c \
+	lib/libvmod_debug/vmod_debug_obj.c \
+	lib/libvmod_debug/vmod_debug_dyn.c
 
-libvmod_debug_la_SOURCES = \
-	vmod_debug.c \
-	vmod_debug_obj.c \
-	vmod_debug_dyn.c
+nodist_lib_libvmod_debug_libvmod_debug_la_SOURCES = \
+	lib/libvmod_debug/vcc_if.c \
+	lib/libvmod_debug/vcc_if.h
 
-nodist_libvmod_debug_la_SOURCES = \
-	vcc_if.c \
-	vcc_if.h
+$(lib_libvmod_debug_libvmod_debug_la_OBJECTS) : lib/libvmod_debug/vcc_if.h include/tbl/vcl_returns.h
 
-# BUILT_SOURCES is only a hack and dependency tracking does not help for the first build
-vmod_debug.lo vmod_debug_obj.lo vmod_debug_dyn.lo: vcc_if.h
+# stupid hack to run vmodtool only once
+lib/libvmod_debug/vcc_if.c \
+	lib/libvmod_debug/vmod_debug.rst \
+	lib/libvmod_debug/vmod_debug.man.rst : lib/libvmod_debug/vcc_if.h
+	@#
 
-vcc_if.c vcc_if.h vmod_debug.rst vmod_debug.man.rst: $(vmodtool) $(vmod_srcdir)/vmod.vcc
-	@PYTHON@ $(vmodtool) $(vmodtoolargs) $(vmod_srcdir)/vmod.vcc
+lib/libvmod_debug/vcc_if.h: $(vmodtool) lib/libvmod_debug/vmod.vcc
+	cd lib/libvmod_debug/ && @PYTHON@ ../../$(vmodtool) $(vmodtoolargs) $(abs_top_srcdir)/lib/libvmod_debug/vmod.vcc
 
-EXTRA_DIST = vmod.vcc
+EXTRA_DIST += lib/libvmod_debug/vmod.vcc
 
-CLEANFILES = $(builddir)/vcc_if.c $(builddir)/vcc_if.h \
-	$(builddir)/vmod_debug.rst \
-	$(builddir)/vmod_debug.man.rst
+CLEANFILES +=  $(builddir)/lib/libvmod_debug/vcc_if.c  $(builddir)/lib/libvmod_debug/vcc_if.h \
+	$(builddir)/lib/libvmod_debug/vmod_debug.rst \
+	$(builddir)/lib/libvmod_debug/vmod_debug.man.rst

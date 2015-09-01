@@ -1,10 +1,8 @@
 #
 #
-RST2ANY_FLAGS = --halt=2
+EXTRA_DIST += doc/changes.rst doc/changes.html
 
-EXTRA_DIST = changes.rst changes.html
-
-changes.html: changes.rst
+doc/changes.html: doc/changes.rst
 if HAVE_RST2HTML
 	${RST2HTML} ${RST2ANY_FLAGS} $? $@
 else
@@ -13,6 +11,3 @@ else
 	@echo "========================================"
 	@false
 endif
-
-# build graphviz before sphinx, so sphinx docs can use svg output
-SUBDIRS = graphviz sphinx

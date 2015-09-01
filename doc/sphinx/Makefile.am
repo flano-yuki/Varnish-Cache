@@ -5,12 +5,12 @@
 SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build -W -q -N
 PAPER         = a4
-BUILDDIR      = build
+BUILDDIR      = $(builddir)/doc/sphinx/build
 
 # Internal variables.
 PAPEROPT_a4     = -D latex_paper_size=a4
 PAPEROPT_letter = -D latex_paper_size=letter
-ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) $(builddir)
+ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) $(builddir)/doc/sphinx
 
 .PHONY: help clean html dirhtml pickle json htmlhelp qthelp latex changes linkcheck doctest
 
@@ -27,23 +27,18 @@ help:
 	@echo "  linkcheck to check all external links for integrity"
 	@echo "  doctest   to run all doctests embedded in the documentation (if enabled)"
 
-clean:
-	-rm -rf $(BUILDDIR)/*
+clean-local: sphinx-clean
 
 # use index.rst as an indicator if we have copied already
 .PHONY: link_srcdir
 link_srcdir:
 	if test "x$(srcdir)" != "x$(builddir)" && test ! -f index.rst ; then \
-		d=`pwd`/$(builddir) ; \
-		cd $(srcdir) && find . -type f | cpio -ldmp $${d} ; \
+		d=`pwd`/$(builddir)/doc/sphinx ; \
+		cd $(srcdir)/doc/sphinx/ && find . -type f | cpio -ldmp $${d} ; \
+		chmod -R +w $${d} ;\
 	fi
 
-# work around for make html called within doc/sphinx
-.PHONY: graphviz
-graphviz:
-	cd ../graphviz && $(MAKE) html
-
-sphinx_prereq: link_srcdir graphviz conf.py
+sphinx_prereq: link_srcdir graphviz doc/sphinx/conf.py
 
 html: sphinx_prereq
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
@@ -103,71 +98,100 @@ doctest: sphinx_prereq
 	@echo "Testing of doctests in the sources finished, look at the " \
 	      "results in $(BUILDDIR)/doctest/output.txt."
 
-EXTRA_DIST = \
-	conf.py \
-	index.rst \
-	include \
-	glossary \
-	installation \
-	phk \
-	tutorial \
-	users-guide \
-	whats-new
+EXTRA_DIST += \
+	doc/sphinx/conf.py \
+	doc/sphinx/index.rst \
+	doc/sphinx/include \
+	doc/sphinx/glossary \
+	doc/sphinx/installation \
+	doc/sphinx/phk \
+	doc/sphinx/tutorial \
+	doc/sphinx/users-guide \
+	doc/sphinx/whats-new
 
-dist-hook:
-	$(MAKE) html
+dist-hook: sphinx-dist
+.PHONY: sphinx-dist
+sphinx-dist:
 	rm -rf $(BUILDDIR)/doctrees
-	cp -r $(BUILDDIR)/html $(distdir)/../
+	cp -r $(BUILDDIR)/html $(distdir)/doc/html
 
-distclean-local:
+distclean-local: sphinx-clean
+sphinx-clean:
 	rm -rf $(BUILDDIR)
 
-include/params.rst: $(top_builddir)/bin/varnishd/varnishd
-	$(top_builddir)/bin/varnishd/varnishd -x dumprstparam > include/params.rst
-BUILT_SOURCES = include/params.rst
+doc/sphinx/include:
+	test -d $@ || mkdir -m0755 $@
+
+SPHINXFIRSTS = $(top_builddir)/lib/libvarnishapi/vsl-tags.rst
+
+$(top_builddir)/doc/sphinx/include/params.rst: $(top_builddir)/bin/varnishd/varnishd $(top_builddir)/doc/sphinx/include
+	$(top_builddir)/bin/varnishd/varnishd -x dumprstparam > $@
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/include/params.rst
 
 # XXX add varnishstat here when it's been _opt2rst'ed
 
-include/varnishncsa_options.rst: $(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishncsa_options.rst: $(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst
 	$(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst options > $@
-include/varnishncsa_synopsis.rst: $(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishncsa_synopsis.rst: $(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst
 	$(top_builddir)/bin/varnishncsa/varnishncsa_opt2rst synopsis > $@
-BUILT_SOURCES += include/varnishncsa_options.rst \
-	include/varnishncsa_synopsis.rst
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/include/varnishncsa_options.rst \
+	$(top_builddir)/doc/sphinx/include/varnishncsa_synopsis.rst
 
-include/varnishlog_options.rst: $(top_builddir)/bin/varnishlog/varnishlog_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishlog_options.rst: $(top_builddir)/bin/varnishlog/varnishlog_opt2rst
 	$(top_builddir)/bin/varnishlog/varnishlog_opt2rst options > $@
-include/varnishlog_synopsis.rst: $(top_builddir)/bin/varnishlog/varnishlog_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishlog_synopsis.rst: $(top_builddir)/bin/varnishlog/varnishlog_opt2rst
 	$(top_builddir)/bin/varnishlog/varnishlog_opt2rst synopsis > $@
-BUILT_SOURCES += include/varnishlog_options.rst \
-	include/varnishlog_synopsis.rst
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/include/varnishlog_options.rst \
+	$(top_builddir)/doc/sphinx/include/varnishlog_synopsis.rst
 
-include/varnishtop_options.rst: $(top_builddir)/bin/varnishtop/varnishtop_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishtop_options.rst: $(top_builddir)/bin/varnishtop/varnishtop_opt2rst
 	$(top_builddir)/bin/varnishtop/varnishtop_opt2rst options > $@
-include/varnishtop_synopsis.rst: $(top_builddir)/bin/varnishtop/varnishtop_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishtop_synopsis.rst: $(top_builddir)/bin/varnishtop/varnishtop_opt2rst
 	$(top_builddir)/bin/varnishtop/varnishtop_opt2rst synopsis > $@
-BUILT_SOURCES += include/varnishtop_options.rst \
-	 include/varnishtop_synopsis.rst
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/include/varnishtop_options.rst \
+	 $(top_builddir)/doc/sphinx/include/varnishtop_synopsis.rst
 
-include/varnishhist_options.rst: $(top_builddir)/bin/varnishhist/varnishhist_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishhist_options.rst: $(top_builddir)/bin/varnishhist/varnishhist_opt2rst
 	$(top_builddir)/bin/varnishhist/varnishhist_opt2rst options > $@
-include/varnishhist_synopsis.rst: $(top_builddir)/bin/varnishhist/varnishhist_opt2rst
+$(top_builddir)/doc/sphinx/include/varnishhist_synopsis.rst: $(top_builddir)/bin/varnishhist/varnishhist_opt2rst
 	$(top_builddir)/bin/varnishhist/varnishhist_opt2rst synopsis > $@
-BUILT_SOURCES += include/varnishhist_options.rst \
-	 include/varnishhist_synopsis.rst
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/include/varnishhist_options.rst \
+	 $(top_builddir)/doc/sphinx/include/varnishhist_synopsis.rst
 
-.PHONY: reference
-reference:
-	test -d $@ || mkdir $@
-BUILT_SOURCES += reference
+$(top_builddir)/doc/sphinx/reference/vmod_std.generated.rst: \
+		$(top_builddir)/lib/libvmod_std/vmod_std.rst
+	mkdir -p $(top_builddir)/doc/sphinx/reference
+	cp -f $(top_builddir)/lib/libvmod_std/vmod_std.rst $@
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/reference/vmod_std.generated.rst
 
-reference/vmod_std.generated.rst: reference $(top_builddir)/lib/libvmod_std/vmod_std.rst
-	cp $(top_builddir)/lib/libvmod_std/vmod_std.rst $@
-BUILT_SOURCES += reference/vmod_std.generated.rst
+$(top_builddir)/doc/sphinx/reference/vmod_directors.generated.rst: \
+		$(top_builddir)/lib/libvmod_directors/vmod_directors.rst 
+	mkdir -p $(top_builddir)/doc/sphinx/reference
+	cp -f $(top_builddir)/lib/libvmod_directors/vmod_directors.rst $@
+SPHINXFIRSTS += $(top_builddir)/doc/sphinx/reference/vmod_directors.generated.rst
 
-reference/vmod_directors.generated.rst: reference $(top_builddir)/lib/libvmod_directors/vmod_directors.rst
-	cp $(top_builddir)/lib/libvmod_directors/vmod_directors.rst $@
-BUILT_SOURCES += reference/vmod_directors.generated.rst
+sphinx_prereq: $(SPHINXFIRSTS)
 
-EXTRA_DIST += $(BUILT_SOURCES)
-MAINTAINERCLEANFILES = $(EXTRA_DIST)
+$(SPHINXFIRSTS): doc/sphinx/include
+
+EXTRA_DIST += $(SPHINXFIRSTS) \
+			  doc/sphinx/reference/directors.rst \
+			  doc/sphinx/reference/index.rst \
+			  doc/sphinx/reference/states.rst \
+			  doc/sphinx/reference/varnishadm.rst \
+			  doc/sphinx/reference/varnish-cli.rst \
+			  doc/sphinx/reference/varnishd.rst \
+			  doc/sphinx/reference/varnishhist.rst \
+			  doc/sphinx/reference/varnishlog.rst \
+			  doc/sphinx/reference/varnishncsa.rst \
+			  doc/sphinx/reference/varnishstat.rst \
+			  doc/sphinx/reference/varnishtest.rst \
+			  doc/sphinx/reference/varnishtop.rst \
+			  doc/sphinx/reference/vcl.rst \
+			  $(top_builddir)/doc/sphinx/reference/vmod_directors.generated.rst \
+			  doc/sphinx/reference/vmod.rst \
+			  $(top_builddir)/doc/sphinx/reference/vmod_std.generated.rst \
+			  doc/sphinx/reference/vsl-query.rst \
+			  doc/sphinx/reference/vsl.rst \
+			  doc/sphinx/reference/vsm.rst
+MAINTAINERCLEANFILES += $(SPHINXFIRSTS)

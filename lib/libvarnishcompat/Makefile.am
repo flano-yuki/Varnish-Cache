@@ -1,15 +1,13 @@
 #
 
-AM_CPPFLAGS = \
+lib_libvarnishcompat_libvarnishcompat_CPPFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_builddir)/include
 
-AM_LDFLAGS  = $(AM_LT_LDFLAGS)
+pkglib_LTLIBRARIES += lib/libvarnishcompat/libvarnishcompat.la
 
-pkglib_LTLIBRARIES = libvarnishcompat.la
+lib_libvarnishcompat_libvarnishcompat_la_LDFLAGS = $(AM_LT_LDFLAGS) -avoid-version
 
-libvarnishcompat_la_LDFLAGS = $(AM_LDFLAGS) -avoid-version
-
-libvarnishcompat_la_SOURCES = \
-	daemon.c \
-	execinfo.c
+lib_libvarnishcompat_libvarnishcompat_la_SOURCES = \
+	lib/libvarnishcompat/daemon.c \
+	lib/libvarnishcompat/execinfo.c
