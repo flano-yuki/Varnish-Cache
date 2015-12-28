@@ -65,6 +65,9 @@ cmd_f cmd_sema;
 cmd_f cmd_logexp;
 cmd_f cmd_process;
 
+cmd_f cmd_h2server;
+cmd_f cmd_h2client;
+
 extern volatile sig_atomic_t vtc_error; /* Error, bail out */
 extern int vtc_stop;		/* Abandon current test, no error */
 extern pthread_t	vtc_thread;
@@ -77,6 +80,7 @@ void init_sema(void);
 void init_server(void);
 
 int http_process(struct vtclog *vl, const char *spec, int sock, int *sfd);
+int http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd);
 
 void cmd_server_genvcl(struct vsb *vsb);
 

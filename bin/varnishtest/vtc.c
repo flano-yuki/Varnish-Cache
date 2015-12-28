@@ -620,7 +620,9 @@ cmd_feature(CMD_ARGS)
 
 static const struct cmds cmds[] = {
 	{ "server",	cmd_server },
+	{ "h2server",	cmd_h2server },
 	{ "client",	cmd_client },
+	{ "h2client",	cmd_h2client },
 	{ "varnish",	cmd_varnish },
 	{ "delay",	cmd_delay },
 	{ "varnishtest",cmd_varnishtest },
