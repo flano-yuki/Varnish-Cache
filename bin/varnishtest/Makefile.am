@@ -36,6 +36,9 @@ varnishtest_SOURCES = \
 		vtc_h2server.c \
 		vtc_h2client.c \
 		vtc_http2.c \
+		hpack.c \
+		tbl.c \
+		headers.c \
 		vtc_varnish.c \
 		vtc_logexp.c \
 		vtc_process.c

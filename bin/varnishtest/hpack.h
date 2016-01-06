@@ -1,0 +1,45 @@
+#include <stdint.h>
+
+struct hdr {
+	char *name;
+	char *value;
+};
+
+enum HdrRet{
+	HdrMore = 0,
+	HdrDone,
+	HdrErr,
+};
+
+enum HdrType {
+	HdrIdx = 0,
+	HdrInc,
+	HdrNot,
+	HdrNever,
+};
+
+struct stm_ctx;
+struct HdrIter;
+
+struct stm_ctx *
+initStmCtx(int tblsize);
+void
+destroyStmCtx(struct stm_ctx *ctx);
+
+struct HdrIter *
+newHdrIter(struct stm_ctx *ctx, char *buf, int size);
+enum HdrRet
+decNextHdr(struct HdrIter *iter, struct hdr *header);
+enum HdrRet
+encNextHdr(struct HdrIter *iter, struct hdr *header, enum HdrType type, int idxName, int nhuff, int vhuff);
+void
+destroyHdrIter(struct HdrIter *iter);
+
+int getHdrIterLen(struct HdrIter *iter);
+
+enum HdrRet
+resizeTable(struct stm_ctx *ctx, uint64_t num);
+
+/* DEBUG */
+void
+dump_dyn_tbl(struct stm_ctx *ctx);

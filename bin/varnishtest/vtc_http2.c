@@ -48,8 +48,12 @@
 #include "vnum.h"
 #include "vre.h"
 #include "vtcp.h"
+#include "hpack.h"
 
 #define MAX_HDR		50
+
+#define ERR_MAX 13
+
 static char *h2_errs[] = {
 	"NO_ERROR",
 	"PROTOCOL_ERROR",
@@ -67,6 +71,53 @@ static char *h2_errs[] = {
 	"HTTP_1_1_REQUIRED",
 	NULL
 };
+
+static char *h2_types[] = {
+	"DATA",
+	"HEADERS",
+	"PRIORITY",
+	"RST_STREAM",
+	"SETTINGS",
+	"PUSH_PROMISE",
+	"PING",
+	"GOAWAY",
+	"WINDOW_UPDATE",
+	"CONTINUATION",
+	NULL
+};
+
+#define SETTINGS_MAX 0x06
+
+static char *h2_settings[] = {
+	"unknown",
+	"HEADER_TABLE_SIZE",
+	"ENABLE_PUSH",
+	"MAX_CONCURRENT_STREAMS",
+	"INITIAL_WINDOW_SIZE",
+	"MAX_FRAME_SIZE",
+	"MAX_HEADER_LIST_SIZE",
+	NULL
+};
+
+enum {
+	TYPE_DATA,
+	TYPE_HEADERS,
+	TYPE_PRIORITY,
+	TYPE_RST,
+	TYPE_SETTINGS,
+	TYPE_PUSH,
+	TYPE_PING,
+	TYPE_GOAWAY,
+	TYPE_WINUP,
+	TYPE_CONT,
+	TYPE_MAX
+};
+
+typedef struct {
+	char              *b;
+	char              *e;
+} txt;
+
 struct stream {
 	unsigned		magic;
 #define STREAM_MAGIC		0x63f1fac2
@@ -81,6 +132,23 @@ struct stream {
 	unsigned		reading;
 	struct http2		*hp;
 	long		ws;
+	int			ftype;
+	union {
+		struct {
+			char data[9];
+			int ack;
+		}		ping;
+		struct {
+			uint32_t err;
+			uint32_t stream;
+			char	 *debug;
+		}		goaway;
+		uint32_t	winup_size;
+		uint32_t	rst_err;
+		double settings[SETTINGS_MAX+1];
+	} md;
+	char			*body;
+	int			bodylen;
 };
 
 struct http2 {
@@ -91,22 +159,6 @@ struct http2 {
 	int			timeout;
 	struct vtclog		*vl;
 
-	struct vsb		*vsb;
-
-	int			nrxbuf;
-	char			*rxbuf;
-	int			prxbuf;
-	char			*body;
-	unsigned		bodyl;
-	char			bodylen[20];
-	char			chunklen[20];
-
-	char			*req[MAX_HDR];
-	char			*resp[MAX_HDR];
-
-	int			gziplevel;
-	int			gzipresidual;
-
 	int			fatal;
 
 	pthread_t		tp;
@@ -114,6 +166,7 @@ struct http2 {
 	VTAILQ_HEAD(, stream)   streams;
 	pthread_mutex_t		mtx;
 	pthread_cond_t          cond;
+	struct stm_ctx		*h2ctx;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -134,74 +187,20 @@ struct http2 {
 /* XXX: we may want to vary this */
 static const char * const nl = "\r\n";
 
-/**********************************************************************
- * Finish and write the vsb to the fd
- */
-
 static void
-http_write(const struct http2 *hp, int lvl, const char *pfx)
+http_write(const struct http2 *hp, int lvl, char *buf, int s, const char *pfx)
 {
 	ssize_t l;
 
-	AZ(VSB_finish(hp->vsb));
-	//vtc_dump(hp->vl, lvl, pfx, VSB_data(hp->vsb), VSB_len(hp->vsb));
-	l = write(hp->fd, VSB_data(hp->vsb), VSB_len(hp->vsb));
-	if (l != VSB_len(hp->vsb))
-		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
-		    l, VSB_len(hp->vsb), strerror(errno));
-}
-
-/**********************************************************************
- * Receive another character
- */
-
-static int
-http_rxchar(struct http2 *hp, int n, int eof)
-{
-	int i;
-	struct pollfd pfd[1];
-
-	while (n > 0) {
-		pfd[0].fd = hp->fd;
-		pfd[0].events = POLLIN;
-		pfd[0].revents = 0;
-		i = poll(pfd, 1, hp->timeout);
-		if (i < 0 && errno == EINTR)
-			continue;
-		if (i == 0)
-			vtc_log(hp->vl, hp->fatal,
-			    "HTTP2 rx timeout (fd:%d %u ms)",
-			    hp->fd, hp->timeout);
-		if (i < 0)
-			vtc_log(hp->vl, hp->fatal,
-			    "HTTP2 rx failed (fd:%d poll: %s)",
-			    hp->fd, strerror(errno));
-		assert(i > 0);
-		assert(hp->prxbuf + n < hp->nrxbuf);
-		i = read(hp->fd, hp->rxbuf + hp->prxbuf, n);
-		if (!(pfd[0].revents & POLLIN))
-			vtc_log(hp->vl, 4,
-			    "HTTP2 rx poll (fd:%d revents: %x n=%d, i=%d)",
-			    hp->fd, pfd[0].revents, n, i);
-		if (i == 0 && eof)
-			return (i);
-		if (i == 0)
-			vtc_log(hp->vl, hp->fatal,
-			    "HTTP2 rx EOF (fd:%d read: %s)",
-			    hp->fd, strerror(errno));
-		if (i < 0)
-			vtc_log(hp->vl, hp->fatal,
-			    "HTTP2 rx failed (fd:%d read: %s)",
-			    hp->fd, strerror(errno));
-		hp->prxbuf += i;
-		hp->rxbuf[hp->prxbuf] = '\0';
-		n -= i;
-	}
-	return (1);
+	vtc_dump(hp->vl, lvl, pfx, buf, s);
+	l = write(hp->fd, buf, s);
+	if (l != s)
+		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %d) %s",
+		    l, s, strerror(errno));
 }
 
 static int
-get_bytes(struct http2 *hp, char *buf, int n, int eof) {
+get_bytes(struct http2 *hp, char *buf, int n) {
 	int i;
 	struct pollfd pfd[1];
 
@@ -226,8 +225,6 @@ get_bytes(struct http2 *hp, char *buf, int n, int eof) {
 			vtc_log(hp->vl, 4,
 			    "HTTP2 rx poll (fd:%d revents: %x n=%d, i=%d)",
 			    hp->fd, pfd[0].revents, n, i);
-		if (i == 0 && eof)
-			return (i);
 		if (i == 0)
 			vtc_log(hp->vl, hp->fatal,
 			    "HTTP2 rx EOF (fd:%d read: %s)",
@@ -246,7 +243,7 @@ struct frame {
 	unsigned	magic;
 #define	FRAME_MAGIC	0x5dd3ec4
 	uint32_t        size;
-	unsigned long	stid;
+	uint32_t	stid;
 	uint8_t         type;
 	uint8_t         flags;
 	char		*data;
@@ -285,11 +282,15 @@ writeFrameHeader(char *buf, struct frame *f) {
 }
 
 static void
-free_frame(struct frame *f) {
-	if (!f)
+free_frame_data(struct stream *s) {
+	if (!s->frame)
 		return;
-	free(f->data);
-	free(f);
+	if (s->frame->type == TYPE_GOAWAY)
+		free(s->md.goaway.debug);
+	memset(&s->md, 0, sizeof(s->md));
+	free(s->frame->data);
+	free(s->frame);
+	s->frame = NULL;
 }
 
 static void
@@ -297,7 +298,7 @@ wait_frame(struct stream *s) {
 	struct http2 *hp;
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	AZ(s->reading);
-	free_frame(s->frame);
+	free_frame_data(s);
 
 	hp = s->hp;
 	AZ(pthread_mutex_lock(&hp->mtx));
@@ -312,28 +313,32 @@ wait_frame(struct stream *s) {
 static void
 write_frame(struct http2 *hp, struct frame *f, int lvl, const char *pfx) {
 	ssize_t l;
+	char *type;
 	char hdr[9];
 	writeFrameHeader(hdr, f);
 
-	char info[64];
-	snprintf(info, 64,
-			"TYPE: %d | FLAGS: 0x%02x | STREAM: %lu | SIZE: %d",
-			f->type, f->flags, f->stid, f->size);
+	if (f->type <= TYPE_MAX)
+		type = h2_types[f->type];
+	else
+		type = "?";
+	vtc_log(hp->vl, 3, "tx: stream: %d, type: %s (%d), "
+			"flags: 0x%02x, size: %d",
+			f->stid, type, f->type, f->flags, f->size);
 
 	AZ(pthread_mutex_lock(&hp->mtx));
-	VSB_clear(hp->vsb);
-	VSB_bcat(hp->vsb, hdr, 9); 
+	l = write(hp->fd, hdr, sizeof(hdr));
+	if (l != sizeof(hdr))
+		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
+		    l, sizeof(hdr), strerror(errno));
+
 	if (f->size) {
 		AN(f->data);
-		VSB_bcat(hp->vsb, f->data, f->size); 
+		l = write(hp->fd, f->data, f->size);
+		if (l != f->size)
+			vtc_log(hp->vl, hp->fatal,
+					"Write failed: (%zd vs %d) %s",
+					l, f->size, strerror(errno));
 	}
-	AZ(VSB_finish(hp->vsb));
-	vtc_dump(hp->vl, lvl, pfx, info, strlen(info));
-	l = write(hp->fd, VSB_data(hp->vsb), VSB_len(hp->vsb));
-	if (l != VSB_len(hp->vsb))
-		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
-		    l, VSB_len(hp->vsb), strerror(errno));
-
 	AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
@@ -347,7 +352,7 @@ receive_frame(void *priv) {
 	struct frame *f;
 	struct stream *s;
 	unsigned need_read;
-	char info[64];
+	char *type;
 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
@@ -364,23 +369,27 @@ receive_frame(void *priv) {
 		}
 		AZ(pthread_mutex_unlock(&hp->mtx));
 
-		if (!get_bytes(hp, hdr, 9, 0)) {
+		if (!get_bytes(hp, hdr, 9)) {
 			vtc_log(hp->vl, 3, "could not get header");
 			return (NULL);
 		}
 		ALLOC_OBJ(f, FRAME_MAGIC);
 		readFrameHeader(f, hdr);
 
-		snprintf(info, 64,
-				"TYPE: %d | FLAGS: 0x%02x | STREAM: %lu | SIZE: %d",
-				f->type, f->flags, f->stid, f->size);
-		vtc_dump(hp->vl, 3, "received", info, strlen(info));
+		if (f->type <= TYPE_MAX)
+			type = h2_types[f->type];
+		else
+			type = "?";
+		vtc_log(hp->vl, 3, "rx: stream: %d, type: %s (%d), "
+				"flags: 0x%02x, size: %d",
+				f->stid, type, f->type, f->flags, f->size);
 
 		assert(f->size <= MAXFRAMESIZE );
 		if (f->size) {
-			f->data = malloc(f->size);
-			//FATAL
-			get_bytes(hp, f->data, f->size, 0);
+			f->data = malloc(f->size + 1);
+			AN(f->data);
+			f->data[f->size] = '\0';
+			get_bytes(hp, f->data, f->size);
 		}
 
 		AZ(pthread_mutex_lock(&hp->mtx));
@@ -389,6 +398,8 @@ receive_frame(void *priv) {
 				if (s->id != f->stid || !s->reading) {
 					continue;
 				}
+				AZ(s->frame);
+				s->ftype = f->type;
 				s->reading = 0;
 				s->frame = f;
 				f = NULL;
@@ -403,27 +414,42 @@ receive_frame(void *priv) {
 	return (NULL);
 }
 
+static void
+cmd_fatal(CMD_ARGS)
+{
+	struct http2 *hp;
+	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
+
+	AZ(av[1]);
+	if (!strcmp(av[0], "fatal"))
+		hp->fatal = 0;
+	else if (!strcmp(av[0], "non-fatal"))
+		hp->fatal = -1;
+	else {
+		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
+	}
+}
 #define TRUST_ME(ptr)   ((void*)(uintptr_t)(ptr))
 
-char *pri_string = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+char pri_string[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 static void
 cmd_http_txpri(CMD_ARGS)
 {
 	struct http2 *hp;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
-	VSB_printf(hp->vsb, pri_string);
-	http_write(hp, 4, "txpri");
+	http_write(hp, 4, pri_string, sizeof(pri_string) - 1, "txpri");
 }
 
 static void
 cmd_http_rxpri(CMD_ARGS)
 {
 	struct http2 *hp;
+	char buf[sizeof(pri_string)];
 	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
 
-	(void)http_rxchar(hp, strlen(pri_string), 0);
-	if (strncmp(pri_string, hp->rxbuf + hp->prxbuf - strlen(pri_string), strlen(pri_string)))
+	(void)get_bytes(hp, buf, sizeof(pri_string) - 1);
+	if (strncmp(pri_string, buf, strlen(pri_string) - 1))
 		vtc_log(hp->vl, hp->fatal, "HTTP rxpri failed");
 }
 
@@ -432,44 +458,36 @@ cmd_txframe(CMD_ARGS)
 {
 	struct http2 *hp;
 	struct stream *s;
-	char *c;
+	char *q;
+	char *buf;
+	char tmp[3];
+	int i;
 	unsigned size = 0;
-	char n;
-	// XXX should be enough, right? right?
-	char buf[1024];
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-	CHECK_OBJ_NOTNULL(hp->vsb, VSB_MAGIC);
-	// TODO check that we have an even number of char
 	AN(av[1]);
-	vtc_log(hp->vl, 3, "working with \"%s\" (%d)", av[1], strncmp(av[1], "0x", 2));
-	if (strncmp(av[1], "0x", 2))
-		vtc_log(hp->vl, 0, "Expected hex number, got \"%s\"", av[1]);
-	c = av[1] + 2;
-	while (c[size]) {
-		if (!isxdigit(c[size]))
-			vtc_log(hp->vl, 0, "Expected hex number, got \"%s\"", av[1]);
-		if (c[size] >= 'a')
-			n = c[size] - 'a' + 10;
-		else if (c[size] >= 'A')
-			n = c[size] - 'A' + 10;
-		else
-			n = c[size] - '0';
-		if (size % 2)
-			buf[size/2] |= 0xf & n;
-		else
-			buf[size/2] = n << 4;
-		size++;
+	q = av[1];
+	size = strlen(q)/2;
+	buf = malloc(size);
+	for (i = 0; i < size; i++) {
+		while (vct_issp(*q))
+			q++;
+		if (*q == '\0')
+			break;
+		memcpy(tmp, q, 2);
+		q += 2;
+		tmp[2] = '\0';
+		if (!vct_ishex(tmp[0]) || !vct_ishex(tmp[1]))
+			vtc_log(hp->vl, 0, "Illegal Hex char \"%c%c\"",
+					tmp[0], tmp[1]);
+		buf[i] = (uint8_t)strtoul(tmp, NULL, 16);
 	}
-
 	AZ(pthread_mutex_lock(&hp->mtx));
-	VSB_clear(hp->vsb);
-	VSB_bcat(hp->vsb, buf, size/2); 
-	http_write(hp, 4, "txframe");
+	http_write(hp, 4, buf, size, "txframe");
 
 	AZ(pthread_mutex_unlock(&hp->mtx));
-	vtc_hexdump(hp->vl, 4, "txframe", (void *)buf, size/2);
+	vtc_hexdump(hp->vl, 4, "txframe", (void *)buf, size);
 }
 
 static void
@@ -485,47 +503,28 @@ cmd_txping(CMD_ARGS)
 {
 	struct http2 *hp;
 	struct stream *s;
-	char *c;
-	unsigned size = 0;
-	char n;
 	struct frame f;
 	char buf[8];
-	f.data = buf;
 	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-	CHECK_OBJ_NOTNULL(hp->vsb, VSB_MAGIC);
 
 	f.type = 0x6;
 	f.size = 8;
 	f.stid = s->id;
 	f.flags = 0;
+	f.data = NULL;
 
 	while (*++av) {
 		if (!strcmp(*av, "-data")) {
 			av++;
-			// TODO check that we have an even number of char
-			if (strncmp(*av, "0x", 2))
-				vtc_log(hp->vl, 0, "Expected hex number, got \"%s\"", *av);
-			c = *av + 2;
-			if (strlen(c) != 16)
-				vtc_log(hp->vl, 0, "txping -data requires and 8-bytes payload (%s)", *av);
-			while (c[size]) {
-				if (!isxdigit(c[size]))
-					vtc_log(hp->vl, 0, "Expected hex number, got \"%s\"", *av);
-				if (c[size] >= 'a')
-					n = c[size] - 'a' + 10;
-				else if (c[size] >= 'A')
-					n = c[size] - 'A' + 10;
-				else
-					n = c[size] - '0';
-				if (size % 2)
-					buf[size/2] |= 0xf & n;
-				else
-					buf[size/2] = n << 4;
-				size++;
+			if (f.data)
+				vtc_log(hp->vl, 0, "this frame already has data");
+			if (strlen(*av) != 8) {
+				vtc_log(hp->vl, 0, "data must be a 8-char string, found  (%s)", *av);
 			}
+			f.data = *av;
 		} else if (!strcmp(*av, "-ack")) {
 			f.flags |= 1;
 		} else
@@ -533,6 +532,8 @@ cmd_txping(CMD_ARGS)
 	}
 	if (*av != NULL)
 		vtc_log(hp->vl, 0, "Unknown txping spec: %s\n", *av);
+	if (!f.data)
+		f.data = buf;
 	write_frame(hp, &f, 4, "txping");
 }
 
@@ -542,13 +543,19 @@ cmd_rxping(CMD_ARGS)
 	struct stream *s;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s)
+	if (!s->frame)
 		return;
 	
 	if (s->frame->type != 0x6)
 		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", s->frame->type);
 	if (s->frame->size != 8)
 		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", s->frame->size);
+
+	s->md.ping.ack = s->frame->flags & 1;
+	memcpy(s->md.ping.data, s->frame->data, 8);
+	s->md.ping.data[8] = '\0';
+
+	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
 }
 
 static void
@@ -565,7 +572,6 @@ cmd_txwinup(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-	CHECK_OBJ_NOTNULL(hp->vsb, VSB_MAGIC);
 
 	f.type = 0x8;
 	f.size = 4;
@@ -592,7 +598,6 @@ cmd_txwinup(CMD_ARGS)
 
 	size = htonl(size);
 	f.data = (void *)&size;
-	vtc_log(hp->vl, 3, "winup is %02x%02x%02x%02x", f.data[0]& 0xff, f.data[1]& 0xff, f.data[2]& 0xff, f.data[3]& 0xff );
 	write_frame(hp, &f, 4, "txwinup");
 }
 
@@ -601,18 +606,23 @@ static void
 cmd_rxwinup(CMD_ARGS)
 {
 	struct stream *s;
+	uint32_t size;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s)
+	if (!s->frame)
 		return;
 
-	vtc_log(vl, 3, "winup is %02x%02x%02x%02x (%x)", s->frame->data[0]& 0xff, s->frame->data[1]& 0xff, s->frame->data[2]& 0xff, s->frame->data[3]& 0xff,  s->frame->data[0] |(1<<7) );
 	if (s->frame->type != 0x8)
 		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", s->frame->type);
 	if (s->frame->size != 4)
 		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", s->frame->size);
 	if (s->frame->data[0] & (1<<7))
 		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
+
+	size = ntohl(*(uint32_t*)s->frame->data);
+	s->md.winup_size = size;
+
+	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
 }
 
 static void
@@ -623,13 +633,9 @@ cmd_txrst(CMD_ARGS)
 	char *p;
 	uint32_t err;
 	struct frame f;
-	char buf[8];
-	f.data = buf;
-	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-	CHECK_OBJ_NOTNULL(hp->vsb, VSB_MAGIC);
 
 	f.type = 0x3;
 	f.size = 4;
@@ -657,7 +663,7 @@ cmd_txrst(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
+		vtc_log(hp->vl, 0, "Unknown txrst spec: %s\n", *av);
 
 	err = htonl(err);
 	f.data = (void *)&err;
@@ -669,15 +675,633 @@ static void
 cmd_rxrst(CMD_ARGS)
 {
 	struct stream *s;
+	uint32_t err;
+	char *buf;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s)
+	if (!s->frame)
 		return;
 
 	if (s->frame->type != 0x03)
 		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", s->frame->type);
 	if (s->frame->size != 4)
 		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", s->frame->size);
+
+	err = ntohl(*(uint32_t*)s->frame->data);
+	s->md.rst_err = err;
+
+	if (err <= ERR_MAX)
+		buf = h2_errs[err];
+	else
+		buf = "unknown";
+	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+}
+
+static void
+cmd_txgoaway(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t err = 0;
+	uint32_t ls = 0;
+	struct frame f;
+	char buf[8];
+	f.data = buf;
+	memset(buf, 0, 8);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	f.type = 0x7;
+	f.size = 8;
+	f.stid = s->id;
+	f.flags = 0;
+	f.data = NULL;
+
+	while (*++av) {
+		if (!strcmp(*av, "-err")) {
+			++av;
+			for (err=0; h2_errs[err]; err++) {
+				if (!strcmp(h2_errs[err], *av))
+					break;
+			}
+			
+			if (h2_errs[err])
+				continue;
+				
+			err = strtoul(*av, &p, 0);
+			if (*p != '\0' || err > UINT32_MAX) {
+				vtc_log(hp->vl, 0, "Error must be a 32-bits integer "
+						"(found %s)", *av);
+			}
+			//XXX: if not fatal, reset size
+		} else if (!strcmp(*av, "-laststream")) {
+			++av;
+			ls = strtoul(*av, &p, 0);
+			if (*p != '\0' || ls >= (1 << 31)) {
+				vtc_log(hp->vl, 0, "Last stream id must be a 31-bits integer "
+						"(found %s)", *av);
+			}
+		} else if (!strcmp(*av, "-debug")) {
+			++av;
+			if (f.data)
+				vtc_log(hp->vl, 0, "this frame already has debug data");
+			f.size = 8 + strlen(*av);
+			f.data = malloc(f.size);
+			memcpy(f.data + 8, *av, f.size - 8);
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txgoaway spec: %s\n", *av);
+
+	if (!f.data)
+		f.data = malloc(2);
+	((uint32_t*)f.data)[0] = htonl(ls);
+	((uint32_t*)f.data)[1] = htonl(err);
+	write_frame(hp, &f, 4, "txgoaway");
+	free(f.data);
+}
+
+
+static void
+cmd_rxgoaway(CMD_ARGS)
+{
+	struct stream *s;
+	char *err_buf;
+	uint32_t err, stid;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+
+	if (s->frame->type != 0x07)
+		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", s->frame->type);
+	if (s->frame->size < 8)
+		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", s->frame->size);
+	if (s->frame->data[0] & (1<<7))
+		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
+
+	stid = ntohl(((uint32_t*)s->frame->data)[0]);
+	err = ntohl(((uint32_t*)s->frame->data)[1]);
+	s->md.goaway.err = err;
+	s->md.goaway.stream = stid;
+
+	if (err <= ERR_MAX)
+		err_buf = h2_errs[err];
+	else
+		err_buf = "unknown";
+
+	if (s->frame->size > 8) {
+		s->md.goaway.debug = malloc(s->frame->size - 8 + 1);
+		AN(s->md.goaway.debug);
+		s->md.goaway.debug[s->frame->size - 8] = '\0';
+
+		memcpy(s->md.goaway.debug, s->frame->data + 8, s->frame->size - 8);
+	}
+
+	vtc_log(vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
+	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
+	if (s->md.goaway.debug)
+		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
+}
+
+#define PUT_KV(name, code) \
+	av++;\
+	val = strtoul(*av, &p, 0);\
+	if (*p != '\0' || val > UINT32_MAX) {\
+		vtc_log(hp->vl, 0, "name must be a 32-bits integer "\
+			"(found %s)", *av);\
+	}\
+	*(uint16_t *)cursor = htons(code);\
+	cursor += sizeof(uint16_t);\
+	*(uint32_t *)cursor = htonl(val);\
+	cursor += sizeof(uint32_t);\
+	f.size += 6;\
+
+static void
+cmd_txsettings(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t val = 0;
+	struct frame f;
+	//TODO dynamic alloc
+	char buf[512];
+	char *cursor = buf;
+	f.data = buf;
+	memset(buf, 0, 512);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	f.type = 0x4;
+	f.size = 0;
+	f.stid = s->id;
+	f.flags = 0;
+
+	while (*++av) {
+		if (!strcmp(*av, "-push")) {
+			++av;
+			*(uint16_t *)cursor = htons(0x2);
+			cursor += sizeof(uint16_t);
+			if (!strcmp(*av, "false"))
+				*(uint32_t *)cursor = htonl(0);
+			else if (!strcmp(*av, "true"))
+				*(uint32_t *)cursor = htonl(1);
+			else
+				vtc_log(hp->vl, 0, "Push parameter is either "
+						"\"true\" or \"false\", not %s",
+						*av);
+			cursor += sizeof(uint32_t);
+			f.size += 6;
+		} else if (!strcmp(*av, "-hdrtbl"))	{ PUT_KV(hdrtbl, 0x1)
+		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(maxstreams, 0x3)
+		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(winsize, 0x4)
+		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(framesize, 0x5)
+		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(hdrsize, 0x6)
+		} else if (!strcmp(*av, "-ack")) {
+			f.flags |= 1;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	write_frame(hp, &f, 4, "txsettings");
+}
+
+static void
+cmd_rxsettings(CMD_ARGS)
+{
+	struct stream *s;
+	char *buf;
+	int i = 0;
+	uint16_t t;
+	uint32_t v;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+
+	if (s->frame->type != 0x04)
+		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", s->frame->type);
+	if (s->frame->size % 6)
+		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", s->frame->size);
+
+	for (i = 0; i < SETTINGS_MAX; i++)
+		s->md.settings[i] = NAN;
+
+	for (i = 0; i < s->frame->size;) {
+		t = ntohs(*(uint16_t *)(s->frame->data+i));
+		i += 2;
+		v = ntohl(*(uint32_t *)(s->frame->data+i));
+		if (t <= SETTINGS_MAX) {
+			buf = h2_settings[t];
+			s->md.settings[t] = v;
+			vtc_log(vl, 3, "putting %d into %d", v, t);
+		} else
+			buf = "unknown";
+		i += 4;
+
+		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+	}
+}
+
+static void
+cmd_txreq(CMD_ARGS)
+{
+	struct stream *s;
+	int url_done = 0;
+	int req_done = 0;
+	char buf[1024*2048];
+	struct HdrIter *iter;
+	struct frame f;
+	char *body = NULL;
+	/*XXX: do we need a better api? yes we do */
+	struct hdr hdr;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	f.type = 0x1;
+	f.size = 0;
+	f.stid = s->id;
+	f.flags = 0x5; /* END_STREAM | END_HEADERS */
+
+	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
+	while (*++av) {
+		if (!strcmp(*av, "-url")) {
+			hdr.name = ":path";
+			hdr.value = av[1];
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			url_done = 1;
+			av++;
+		} else if (!strcmp(*av, "-req")) {
+			hdr.name = ":method";
+			hdr.value = av[1];
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			req_done = 1;
+			av++;
+		} else if (!strcmp(*av, "-hdr")) {
+			hdr.name = av[1];
+			hdr.value = av[2];
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			av += 2;
+		} else if (!strcmp(*av, "-body")) {
+			body = av[1];
+			f.flags &= ~0x1; /* unset END_STREAM */
+			av++;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	if (!url_done) {
+			hdr.name = ":path";
+			hdr.value = "/";
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+	}
+	if (!req_done) {
+			hdr.name = ":method";
+			hdr.value = "GET";
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+	}
+
+	f.size = getHdrIterLen(iter);
+	f.data = buf;	
+	destroyHdrIter(iter);
+	write_frame(s->hp, &f, 4, "txreq (H)");
+
+	if (!body)
+		return;
+
+	f.type = 0x0;
+	f.size = strlen(body);
+	f.data = body;
+	f.stid = s->id;
+	f.flags = 0x1; /* END_STREAM */
+	write_frame(s->hp, &f, 4, "txreq (B)");
+}
+
+static int
+grab_hdr(struct stream *s, struct vtclog *vl) {
+	int r;
+	struct HdrIter *iter;
+	struct hdr header;
+	wait_frame(s);
+	if (!s->frame)
+		return (0);
+
+	if (s->frame->type != 0x01)
+		vtc_log(vl, 0, "Received something that is not a header frame (type=0x%x)", s->frame->type);
+
+	iter = newHdrIter(s->hp->h2ctx, s->frame->data, s->frame->size);
+
+	r = decNextHdr(iter, &header);
+	while (r == HdrMore) {
+		vtc_log(vl, 3, "s%lu - header: %s : %s", s->id, header.name, header.value);
+		free(header.name);
+		free(header.value);
+		r = decNextHdr(iter, &header);
+	}
+	destroyHdrIter(iter);
+	return (1);
+}
+
+/* XXX padding */
+static int
+grab_data(struct stream *s, struct vtclog *vl) {
+	char *tmp;
+	wait_frame(s);
+	if (!s->frame)
+		return (0);
+
+	if (s->frame->type != 0x00)
+		vtc_log(vl, 0, "Received something that is not a data frame (type=0x%x)", s->frame->type);
+
+	if (!s->frame->size) {
+		vtc_log(vl, 3, "s%lu - no data", s->id);
+		return (1);
+	}
+
+	if (s->body)
+		tmp = realloc(s->body, s->bodylen + s->frame->size + 1);
+	else
+		tmp = malloc(s->bodylen + s->frame->size + 1);
+	AN(tmp);
+	free(s->body);
+	s->body = tmp;
+	memcpy(s->body + s->bodylen, s->frame->data, s->frame->size);
+	s->bodylen += s->frame->size;
+	s->body[s->bodylen] = '\0';
+
+	vtc_log(vl, 3, "s%lu - data: %s", s->id, s->frame->data);
+	return (1);
+}
+
+static void
+cmd_rxreq(CMD_ARGS)
+{
+	struct stream *s;
+	int end_stream;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	do {
+		if (!grab_hdr(s, vl))
+			return;
+		end_stream = s->frame->flags & 0x1;
+	} while (!(s->frame->flags | 0x4)); /* END_HEADERS */
+
+	vtc_log(vl, 3, "B end_stream is %d", end_stream);
+	while (!end_stream) {
+		if (!grab_data(s, vl))
+			return;
+		end_stream = s->frame->flags & 0x1;
+	}
+}
+
+static void
+cmd_txresp(CMD_ARGS)
+{
+	struct stream *s;
+	int status_done = 0;
+	char buf[1024*2048];
+	struct HdrIter *iter;
+	struct frame f;
+	char *body = NULL;
+	/*XXX: do we need a better api? yes we do */
+	struct hdr hdr;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	f.type = 0x1;
+	f.size = 0;
+	f.stid = s->id;
+	f.flags = 0x5; /* END_STREAM | END_HEADERS */
+
+	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
+	while (*++av) {
+		if (!strcmp(*av, "-status")) {
+			hdr.name = ":status";
+			hdr.value = av[1];
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			status_done = 1;
+			av++;
+		} else if (!strcmp(*av, "-hdr")) {
+			hdr.name = av[1];
+			hdr.value = av[2];
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			av += 2;
+		} else if (!strcmp(*av, "-body")) {
+			body = av[1];
+			f.flags &= ~0x1; /* unset END_STREAM */
+			av++;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	if (!status_done) {
+			hdr.name = ":status";
+			hdr.value = "200";
+			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+	}
+
+	f.size = getHdrIterLen(iter);
+	f.data = buf;	
+	destroyHdrIter(iter);
+	write_frame(s->hp, &f, 4, "txreq (H)");
+
+	if (!body)
+		return;
+
+	f.type = 0x0;
+	f.size = strlen(body);
+	f.data = body;
+	f.stid = s->id;
+	f.flags = 0x1; /* END_STREAM */
+	write_frame(s->hp, &f, 4, "txreq (B)");
+}
+
+static void
+cmd_rxresp(CMD_ARGS)
+{
+	struct stream *s;
+	int end_stream;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	do {
+		if (!grab_hdr(s, vl))
+			return;
+		end_stream = s->frame->flags & 0x1;
+	} while (!(s->frame->flags | 0x4)); /* END_HEADERS */
+
+	vtc_log(vl, 3, "B end_stream is %d", end_stream);
+	while (!end_stream) {
+		if (!grab_data(s, vl))
+			return;
+		end_stream = s->frame->flags & 0x1;
+	}
+}
+
+#define CHECK_LAST_FRAME(TYPE) \
+	if (s->ftype != TYPE_ ## TYPE) { \
+		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
+	}
+
+#define RETURN_SETTINGS(idx) \
+{ \
+	CHECK_LAST_FRAME(SETTINGS); \
+	if isnan(s->md.settings[idx]) { \
+		return (NULL); \
+	} \
+	snprintf(buf, 20, "%.0f", s->md.settings[idx]); \
+	return (buf); \
+} while (0);
+
+#define RETURN_BUFFED(val) \
+{ \
+	snprintf(buf, 20, "%d", val); \
+	return (buf); \
+} while (0)
+
+static const char *
+cmd_var_resolve(struct stream *s, char *spec, char *buf)
+{
+	//char **hh, *hdr;
+	if (!s->frame)
+		vtc_log(s->hp->vl, 0, "No frame received yet.");
+	AN(buf);
+	if (!strcmp(spec, "ping.data")) {
+		CHECK_LAST_FRAME(PING);
+		return (s->md.ping.data);
+	} else if (!strcmp(spec, "ping.ack")) {
+		CHECK_LAST_FRAME(PING);
+		if (s->frame->flags & 1)
+			snprintf(buf, 20, "true");
+		else
+			snprintf(buf, 20, "false");
+		return (buf);
+	} else if (!strcmp(spec, "winup.size")) {
+		CHECK_LAST_FRAME(WINUP);
+		RETURN_BUFFED(s->md.winup_size);
+	} else if (!strcmp(spec, "rst.err")) {
+		CHECK_LAST_FRAME(RST);
+		RETURN_BUFFED(s->md.rst_err);
+	} else if (!strcmp(spec, "settings.ack")) {
+		CHECK_LAST_FRAME(SETTINGS);
+		if (s->frame->flags & 1)
+			snprintf(buf, 20, "true");
+		else
+			snprintf(buf, 20, "false");
+		return (buf);
+	} else if (!strcmp(spec, "settings.hdrtbl")) {
+		RETURN_SETTINGS(1);
+	} else if (!strcmp(spec, "settings.push")) {
+		CHECK_LAST_FRAME(SETTINGS);
+		if (isnan(s->md.settings[2]))
+			return (NULL);
+		else if (s->md.settings[2] == 1)
+			snprintf(buf, 20, "true");
+		else
+			snprintf(buf, 20, "false");
+		return (buf);
+	} else if (!strcmp(spec, "settings.maxstreams")) {
+		RETURN_SETTINGS(3);
+	} else if (!strcmp(spec, "settings.winsize")) {
+		RETURN_SETTINGS(4);
+	} else if (!strcmp(spec, "settings.framesize")) {
+		RETURN_SETTINGS(5);
+	} else if (!strcmp(spec, "settings.hdrsize")) {
+		RETURN_SETTINGS(6);
+	} else if (!strcmp(spec, "goaway.err")) {
+		CHECK_LAST_FRAME(GOAWAY);
+		RETURN_BUFFED(s->md.goaway.err);
+	} else if (!strcmp(spec, "goaway.laststream")) {
+		CHECK_LAST_FRAME(GOAWAY);
+		RETURN_BUFFED(s->md.goaway.stream);
+	} else if (!strcmp(spec, "goaway.debug")) {
+		CHECK_LAST_FRAME(GOAWAY);
+		return (s->md.goaway.debug);
+	} else if (!strcmp(spec, "frame.data")) {
+		return (s->frame->data);
+	} else if (!strcmp(spec, "frame.type")) {
+		RETURN_BUFFED(s->frame->type);
+	} else if (!strcmp(spec, "frame.size")) {
+		RETURN_BUFFED(s->frame->size);
+	} else if (!strcmp(spec, "frame.stream")) {
+		RETURN_BUFFED(s->frame->stid);
+	} else
+		return (spec);
+	return(NULL);
+}
+
+static void
+cmd_http_expect(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	const char *lhs, *clhs;
+	char *cmp;
+	const char *rhs, *crhs;
+	vre_t *vre;
+	const char *error;
+	int erroroffset;
+	int i, retval = -1;
+	char buf[20];
+
+	(void)cmd;
+	(void)vl;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	AZ(strcmp(av[0], "expect"));
+	av++;
+
+	AN(av[0]);
+	AN(av[1]);
+	AN(av[2]);
+	AZ(av[3]);
+	lhs = cmd_var_resolve(s, av[0], buf);
+	cmp = av[1];
+	rhs = cmd_var_resolve(s, av[2], buf);
+
+	clhs = lhs ? lhs : "<undef>";
+	crhs = rhs ? rhs : "<undef>";
+
+	if (!strcmp(cmp, "~") || !strcmp(cmp, "!~")) {
+		vre = VRE_compile(crhs, 0, &error, &erroroffset);
+		if (vre == NULL)
+			vtc_log(hp->vl, 0, "REGEXP error: %s (@%d) (%s)",
+			    error, erroroffset, crhs);
+		i = VRE_exec(vre, clhs, strlen(clhs), 0, 0, NULL, 0, 0);
+		retval = (i >= 0 && *cmp == '~') || (i < 0 && *cmp == '!');
+		VRE_free(&vre);
+	} else if (!strcmp(cmp, "==")) {
+		retval = strcmp(clhs, crhs) == 0;
+	} else if (!strcmp(cmp, "!=")) {
+		retval = strcmp(clhs, crhs) != 0;
+	} else if (lhs == NULL || rhs == NULL) {
+		// fail inequality comparisons if either side is undef'ed
+		retval = 0;
+	} else if (!strcmp(cmp, "<")) {
+		retval = isless(VNUM(lhs), VNUM(rhs));
+	} else if (!strcmp(cmp, ">")) {
+		retval = isgreater(VNUM(lhs), VNUM(rhs));
+	} else if (!strcmp(cmp, "<=")) {
+		retval = islessequal(VNUM(lhs), VNUM(rhs));
+	} else if (!strcmp(cmp, ">=")) {
+		retval = isgreaterequal(VNUM(lhs), VNUM(rhs));
+	}
+
+	if (retval == -1)
+		vtc_log(hp->vl, 0,
+		    "EXPECT %s (%s) %s %s (%s) test not implemented",
+		    av[0], clhs, av[1], av[2], crhs);
+	else
+		vtc_log(hp->vl, retval ? 4 : 0, "EXPECT %s (%s) %s \"%s\" %s",
+		    av[0], clhs, cmp, crhs, retval ? "match" : "failed");
 }
 
 
@@ -690,8 +1314,21 @@ static const struct cmds stream_cmds[] = {
 	{ "rxwinup",		cmd_rxwinup },
 	{ "txrst",		cmd_txrst },
 	{ "rxrst",		cmd_rxrst },
+	{ "txgoaway",		cmd_txgoaway },
+	{ "rxgoaway",		cmd_rxgoaway },
+	{ "txreq",		cmd_txreq },
+	{ "rxreq",		cmd_rxreq },
+	{ "txsettings",		cmd_txsettings },
+	{ "rxsettings",		cmd_rxsettings },
+	{ "txreq",		cmd_txreq },
+	{ "rxreq",		cmd_rxreq },
+	{ "txresp",		cmd_txresp },
+	{ "rxresp",		cmd_rxresp },
+	{ "expect",		cmd_http_expect },
 	{ "delay",		cmd_delay },
 	{ "sema",		cmd_sema },
+	{ "fatal",		cmd_fatal },
+	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
 };
 
@@ -878,16 +1515,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
 	AN(hp);
 	hp->fd = sock;
 	hp->timeout = vtc_maxdur * 1000 / 2;
-	hp->nrxbuf = 2048*1024;
-	hp->vsb = VSB_new_auto();
-	CHECK_OBJ_NOTNULL(hp->vsb, VSB_MAGIC);
-	hp->rxbuf = malloc(hp->nrxbuf);		/* XXX */
 	hp->sfd = sfd;
 	hp->vl = vl;
-	hp->gziplevel = 0;
-	hp->gzipresidual = -1;
-	AN(hp->rxbuf);
-	AN(hp->vsb);
 
 	hp->running = 1;
 	if (sfd) {
@@ -895,6 +1524,7 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
 	} else  {
 		cmd_http_txpri(NULL, hp, NULL, vl);
 	}
+	hp->h2ctx = initStmCtx(0);
 	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
 
 	parse_string(spec, http2_cmds, hp, vl);
@@ -911,10 +1541,9 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
 	AZ(pthread_mutex_unlock(&hp->mtx));
 
 	AZ(pthread_join(hp->tp, NULL));
+	destroyStmCtx(hp->h2ctx);
 
 	retval = hp->fd;
-	VSB_delete(hp->vsb);
-	free(hp->rxbuf);
 	free(hp);
 	return (retval);
 }
