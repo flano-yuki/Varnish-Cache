@@ -317,8 +317,8 @@ do { \
 	f.size = sz; \
 	f.stid = id; \
 	f.flags = fl; \
-	f.data = NULL;
-} while(0);
+	f.data = NULL; \
+} while(0)
 
 
 #define MAXFRAMESIZE 2048 * 1024
@@ -551,18 +551,20 @@ static void
 cmd_rxping(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame)
 		return;
-	
-	if (s->frame->type != 0x6)
-		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", s->frame->type);
-	if (s->frame->size != 8)
-		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", s->frame->size);
+	f = s->frame;
 
-	s->md.ping.ack = s->frame->flags & 1;
-	memcpy(s->md.ping.data, s->frame->data, 8);
+	if (f->type != 0x6)
+		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
+	if (f->size != 8)
+		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", f->size);
+
+	s->md.ping.ack = f->flags & 1;
+	memcpy(s->md.ping.data, f->data, 8);
 	s->md.ping.data[8] = '\0';
 
 	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
@@ -613,20 +615,22 @@ static void
 cmd_rxwinup(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	uint32_t size;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame)
 		return;
+	f = s->frame;
 
-	if (s->frame->type != 0x8)
-		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", s->frame->type);
-	if (s->frame->size != 4)
-		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", s->frame->size);
-	if (s->frame->data[0] & (1<<7))
+	if (f->type != 0x8)
+		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
+	if (f->size != 4)
+		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
 		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
 
-	size = ntohl(*(uint32_t*)s->frame->data);
+	size = ntohl(*(uint32_t*)f->data);
 	s->md.winup_size = size;
 
 	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
@@ -678,6 +682,7 @@ cmd_txrst(CMD_ARGS)
 static void
 cmd_rxrst(CMD_ARGS)
 {
+	struct frame *f;
 	struct stream *s;
 	uint32_t err;
 	char *buf;
@@ -685,13 +690,14 @@ cmd_rxrst(CMD_ARGS)
 	wait_frame(s);
 	if (!s->frame)
 		return;
+	f = s->frame;
 
-	if (s->frame->type != 0x03)
-		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", s->frame->type);
-	if (s->frame->size != 4)
-		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", s->frame->size);
+	if (f->type != 0x03)
+		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", f->type);
+	if (f->size != 4)
+		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
 
-	err = ntohl(*(uint32_t*)s->frame->data);
+	err = ntohl(*(uint32_t*)f->data);
 	s->md.rst_err = err;
 
 	if (err <= ERR_MAX)
@@ -768,23 +774,26 @@ cmd_txgoaway(CMD_ARGS)
 static void
 cmd_rxgoaway(CMD_ARGS)
 {
+	struct frame *f;
 	struct stream *s;
 	char *err_buf;
 	uint32_t err, stid;
+
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame)
 		return;
+	f = s->frame;
 
-	if (s->frame->type != 0x07)
-		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", s->frame->type);
-	if (s->frame->size < 8)
-		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", s->frame->size);
-	if (s->frame->data[0] & (1<<7))
+	if (f->type != 0x07)
+		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", f->type);
+	if (f->size < 8)
+		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
 		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
 
-	stid = ntohl(((uint32_t*)s->frame->data)[0]);
-	err = ntohl(((uint32_t*)s->frame->data)[1]);
+	stid = ntohl(((uint32_t*)f->data)[0]);
+	err = ntohl(((uint32_t*)f->data)[1]);
 	s->md.goaway.err = err;
 	s->md.goaway.stream = stid;
 
@@ -793,12 +802,12 @@ cmd_rxgoaway(CMD_ARGS)
 	else
 		err_buf = "unknown";
 
-	if (s->frame->size > 8) {
-		s->md.goaway.debug = malloc(s->frame->size - 8 + 1);
+	if (f->size > 8) {
+		s->md.goaway.debug = malloc(f->size - 8 + 1);
 		AN(s->md.goaway.debug);
-		s->md.goaway.debug[s->frame->size - 8] = '\0';
+		s->md.goaway.debug[f->size - 8] = '\0';
 
-		memcpy(s->md.goaway.debug, s->frame->data + 8, s->frame->size - 8);
+		memcpy(s->md.goaway.debug, f->data + 8, f->size - 8);
 	}
 
 	vtc_log(vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
@@ -878,23 +887,25 @@ cmd_rxsettings(CMD_ARGS)
 	int i = 0;
 	uint16_t t;
 	uint32_t v;
+	struct frame *f;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame)
 		return;
+	f = s->frame;
 
-	if (s->frame->type != 0x04)
-		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", s->frame->type);
-	if (s->frame->size % 6)
-		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", s->frame->size);
+	if (f->type != 0x04)
+		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", f->type);
+	if (f->size % 6)
+		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
 
 	for (i = 0; i < SETTINGS_MAX; i++)
 		s->md.settings[i] = NAN;
 
-	for (i = 0; i < s->frame->size;) {
-		t = ntohs(*(uint16_t *)(s->frame->data+i));
+	for (i = 0; i < f->size;) {
+		t = ntohs(*(uint16_t *)(f->data + i));
 		i += 2;
-		v = ntohl(*(uint32_t *)(s->frame->data+i));
+		v = ntohl(*(uint32_t *)(f->data + i));
 		if (t <= SETTINGS_MAX) {
 			buf = h2_settings[t];
 			s->md.settings[t] = v;
@@ -957,30 +968,32 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 /* XXX padding */
 static int
 grab_data(struct stream *s, struct vtclog *vl) {
+	struct frame *f;
 	wait_frame(s);
 	if (!s->frame)
 		return (0);
+	f = s->frame;
 
-	if (s->frame->type != 0x00)
-		vtc_log(vl, 0, "Received something that is not a data frame (type=0x%x)", s->frame->type);
+	if (f->type != 0x00)
+		vtc_log(vl, 0, "Received something that is not a data frame (type=0x%x)", f->type);
 
-	if (!s->frame->size) {
+	if (!f->size) {
 		vtc_log(vl, 3, "s%lu - no data", s->id);
 		return (1);
 	}
 
 	if (s->body) {
-		s->body = realloc(s->body, s->bodylen + s->frame->size + 1);
+		s->body = realloc(s->body, s->bodylen + f->size + 1);
 	} else {
 		AZ(s->bodylen);
-		s->body = malloc(s->frame->size + 1);
+		s->body = malloc(f->size + 1);
 	}
 	AN(s->body);
-	memcpy(s->body + s->bodylen, s->frame->data, s->frame->size);
-	s->bodylen += s->frame->size;
+	memcpy(s->body + s->bodylen, f->data, f->size);
+	s->bodylen += f->size;
 	s->body[s->bodylen] = '\0';
 
-	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, s->frame->data, s->body);
+	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, f->data, s->body);
 	return (1);
 }
 
@@ -1016,13 +1029,13 @@ cmd_tx11obj(CMD_ARGS)
 
 	INIT_FRAME(f, CONT, 0, s->id, END_HEADERS);
 
-	if (strcmp(cmd_str, "txcont"))
+	if (strcmp(cmd_str, "txcont")) {
 		f.type = TYPE_HEADERS;
 		f.flags |= 0x1; /* END_STREAM*/
-		if (!strcmp(cmd_str, "txreq"))
+		if (!strcmp(cmd_str, "txreq")) {
 			req_done = 0;
 			url_done = 0;
-		else {
+		} else {
 			status_done = 0;
 		}
 	}
