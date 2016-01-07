@@ -113,10 +113,14 @@ enum {
 	TYPE_MAX
 };
 
-typedef struct {
-	char              *b;
-	char              *e;
-} txt;
+enum {
+	ACK = 0x1,
+	END_STREAM = 0x1,
+	PADDED = 0x8,
+	END_HEADERS = 0x4,
+	PRIORITY = 0x20,
+
+};
 
 struct stream {
 	unsigned		magic;
@@ -147,8 +151,11 @@ struct stream {
 		uint32_t	rst_err;
 		double settings[SETTINGS_MAX+1];
 	} md;
+
 	char			*body;
 	int			bodylen;
+	struct hdrng		hdrs[MAX_HDR];		
+	int			nhdrs;
 };
 
 struct http2 {
@@ -182,10 +189,6 @@ struct http2 {
 			vtc_log(hp->vl, 0,				\
 			    "\"%s\" only possible in server", av[0]);	\
 	} while (0)
-
-
-/* XXX: we may want to vary this */
-static const char * const nl = "\r\n";
 
 static void
 http_write(const struct http2 *hp, int lvl, char *buf, int s, const char *pfx)
@@ -404,6 +407,7 @@ receive_frame(void *priv) {
 				s->frame = f;
 				f = NULL;
 				AZ(pthread_cond_signal(&s->cond));
+				break;
 			}
 			if (f)
 				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
@@ -510,7 +514,7 @@ cmd_txping(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = 0x6;
+	f.type = TYPE_PING;
 	f.size = 8;
 	f.stid = s->id;
 	f.flags = 0;
@@ -573,7 +577,7 @@ cmd_txwinup(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = 0x8;
+	f.type = TYPE_WINUP;
 	f.size = 4;
 	f.stid = s->id;
 	f.flags = 0;
@@ -637,7 +641,7 @@ cmd_txrst(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = 0x3;
+	f.type = TYPE_RST;
 	f.size = 4;
 	f.stid = s->id;
 	f.flags = 0;
@@ -713,7 +717,7 @@ cmd_txgoaway(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = 0x7;
+	f.type = TYPE_GOAWAY;
 	f.size = 8;
 	f.stid = s->id;
 	f.flags = 0;
@@ -837,7 +841,7 @@ cmd_txsettings(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = 0x4;
+	f.type = TYPE_SETTINGS;
 	f.size = 0;
 	f.stid = s->id;
 	f.flags = 0;
@@ -911,101 +915,48 @@ cmd_rxsettings(CMD_ARGS)
 }
 
 static void
-cmd_txreq(CMD_ARGS)
-{
-	struct stream *s;
-	int url_done = 0;
-	int req_done = 0;
-	char buf[1024*2048];
-	struct HdrIter *iter;
-	struct frame f;
-	char *body = NULL;
-	/*XXX: do we need a better api? yes we do */
-	struct hdr hdr;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-
-	f.type = 0x1;
-	f.size = 0;
-	f.stid = s->id;
-	f.flags = 0x5; /* END_STREAM | END_HEADERS */
-
-	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
-	while (*++av) {
-		if (!strcmp(*av, "-url")) {
-			hdr.name = ":path";
-			hdr.value = av[1];
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-			url_done = 1;
-			av++;
-		} else if (!strcmp(*av, "-req")) {
-			hdr.name = ":method";
-			hdr.value = av[1];
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-			req_done = 1;
-			av++;
-		} else if (!strcmp(*av, "-hdr")) {
-			hdr.name = av[1];
-			hdr.value = av[2];
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-			av += 2;
-		} else if (!strcmp(*av, "-body")) {
-			body = av[1];
-			f.flags &= ~0x1; /* unset END_STREAM */
-			av++;
-		} else
-			break;
+clean_headers(struct stream *s) {
+	struct hdrng *h = s->hdrs;
+	while (s->nhdrs--) {
+		if (h->key.size)
+			free(h->key.ptr);
+		if (h->value.size)
+			free(h->value.ptr);
+		h++;
 	}
-	if (*av != NULL)
-		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
-
-	if (!url_done) {
-			hdr.name = ":path";
-			hdr.value = "/";
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-	}
-	if (!req_done) {
-			hdr.name = ":method";
-			hdr.value = "GET";
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-	}
-
-	f.size = getHdrIterLen(iter);
-	f.data = buf;	
-	destroyHdrIter(iter);
-	write_frame(s->hp, &f, 4, "txreq (H)");
-
-	if (!body)
-		return;
-
-	f.type = 0x0;
-	f.size = strlen(body);
-	f.data = body;
-	f.stid = s->id;
-	f.flags = 0x1; /* END_STREAM */
-	write_frame(s->hp, &f, 4, "txreq (B)");
+	s->nhdrs = 0;
+	memset(s->hdrs, 0, sizeof(s->hdrs));
 }
 
 static int
-grab_hdr(struct stream *s, struct vtclog *vl) {
+grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 	int r;
 	struct HdrIter *iter;
-	struct hdr header;
 	wait_frame(s);
 	if (!s->frame)
 		return (0);
 
-	if (s->frame->type != 0x01)
-		vtc_log(vl, 0, "Received something that is not a header frame (type=0x%x)", s->frame->type);
+	assert(type == 0x1 || type == 0x9);
+
+	if (s->frame->type != type)
+		vtc_log(vl, 0, "Received something that is not a %s frame (type=0x%x)", type == 1 ? "header" : "continuation", s->frame->type);
 
 	iter = newHdrIter(s->hp->h2ctx, s->frame->data, s->frame->size);
 
-	r = decNextHdr(iter, &header);
-	while (r == HdrMore) {
-		vtc_log(vl, 3, "s%lu - header: %s : %s", s->id, header.name, header.value);
-		free(header.name);
-		free(header.value);
-		r = decNextHdr(iter, &header);
+
+	while (s->nhdrs < MAX_HDR) {
+		r = decNextHdr(iter, s->hdrs + s->nhdrs);
+		if (r == HdrErr )
+			break;
+		vtc_log(vl, 3, "s%lu - header: %s : %s (%d)",
+				s->id, s->hdrs[s->nhdrs].key.ptr, s->hdrs[s->nhdrs].value.ptr, s->nhdrs);
+		s->nhdrs++;
+		if (r == HdrDone)
+			break;
 	}
+	//XXX document too many headers errors
+	if (r != HdrDone)
+		vtc_log(vl, s->hp->fatal, "Header decoding failed");
 	destroyHdrIter(iter);
 	return (1);
 }
@@ -1013,7 +964,6 @@ grab_hdr(struct stream *s, struct vtclog *vl) {
 /* XXX padding */
 static int
 grab_data(struct stream *s, struct vtclog *vl) {
-	char *tmp;
 	wait_frame(s);
 	if (!s->frame)
 		return (0);
@@ -1026,76 +976,98 @@ grab_data(struct stream *s, struct vtclog *vl) {
 		return (1);
 	}
 
-	if (s->body)
-		tmp = realloc(s->body, s->bodylen + s->frame->size + 1);
-	else
-		tmp = malloc(s->bodylen + s->frame->size + 1);
-	AN(tmp);
-	free(s->body);
-	s->body = tmp;
+	if (s->body) {
+		s->body = realloc(s->body, s->bodylen + s->frame->size + 1);
+	} else {
+		AZ(s->bodylen);
+		s->body = malloc(s->frame->size + 1);
+	}
+	AN(s->body);
 	memcpy(s->body + s->bodylen, s->frame->data, s->frame->size);
 	s->bodylen += s->frame->size;
 	s->body[s->bodylen] = '\0';
 
-	vtc_log(vl, 3, "s%lu - data: %s", s->id, s->frame->data);
+	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, s->frame->data, s->body);
 	return (1);
 }
 
-static void
-cmd_rxreq(CMD_ARGS)
-{
-	struct stream *s;
-	int end_stream;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	do {
-		if (!grab_hdr(s, vl))
-			return;
-		end_stream = s->frame->flags & 0x1;
-	} while (!(s->frame->flags | 0x4)); /* END_HEADERS */
-
-	vtc_log(vl, 3, "B end_stream is %d", end_stream);
-	while (!end_stream) {
-		if (!grab_data(s, vl))
-			return;
-		end_stream = s->frame->flags & 0x1;
-	}
+#define ENC(k, v) \
+{ \
+	hdr.key.ptr = k; \
+	hdr.key.size = strlen(k); \
+	hdr.value.ptr = v; \
+	hdr.value.size = strlen(v); \
+	encNextHdr(iter, &hdr); \
 }
 
 static void
-cmd_txresp(CMD_ARGS)
+cmd_tx11obj(CMD_ARGS)
 {
 	struct stream *s;
 	int status_done = 0;
+	int req_done = 0;
+	int url_done = 0;
 	char buf[1024*2048];
 	struct HdrIter *iter;
 	struct frame f;
 	char *body = NULL;
 	/*XXX: do we need a better api? yes we do */
-	struct hdr hdr;
+	struct hdrng hdr;
+	char *cmd_str = *av;
+
+	hdr.t = HdrNot;
+	hdr.i = 0;
+	hdr.key.huff = 0;
+	hdr.value.huff = 0;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
-	f.type = 0x1;
+	if (!strcmp(cmd_str, "txcont")) {
+		status_done = 1;
+		f.type = TYPE_CONT;
+	} else {
+		f.type = TYPE_HEADERS;
+		f.flags = 0x1; /* END_STREAM*/
+		if (!strcmp(cmd_str, "txreq"))
+			status_done = 1;
+		else {
+			req_done = 1;
+			url_done = 1;
+		}
+	}
+	f.flags |= 0x4; /* END_HEADERS */
 	f.size = 0;
 	f.stid = s->id;
-	f.flags = 0x5; /* END_STREAM | END_HEADERS */
 
 	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
 	while (*++av) {
-		if (!strcmp(*av, "-status")) {
-			hdr.name = ":status";
-			hdr.value = av[1];
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-			status_done = 1;
+		if (!strcmp(*av, "-status") &&
+				!strcmp(cmd_str, "txresp")) {
+			ENC(":status", av[1]);
 			av++;
+			status_done = 1;
+		} else if (!strcmp(*av, "-url") &&
+				!strcmp(cmd_str, "txreq")) {
+			ENC(":path", av[1]);
+			av++;
+			url_done = 1;
+		} else if (!strcmp(*av, "-req") &&
+				!strcmp(cmd_str, "txreq")) {
+			ENC(":method", av[1]);
+			av++;
+			req_done = 1;
 		} else if (!strcmp(*av, "-hdr")) {
-			hdr.name = av[1];
-			hdr.value = av[2];
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
+			ENC(av[1], av[2]);
 			av += 2;
-		} else if (!strcmp(*av, "-body")) {
+		} else if (!strcmp(*av, "-body") &&
+				strcmp(cmd_str, "txcont")) {
 			body = av[1];
 			f.flags &= ~0x1; /* unset END_STREAM */
 			av++;
+		} else if (!strcmp(*av, "-nostrend") &&
+				strcmp(cmd_str, "txcont")) {
+			f.flags &= ~0x1;
+		} else if (!strcmp(*av, "-nohdrend")) {
+			f.flags &= ~0x4;
 		} else
 			break;
 	}
@@ -1103,10 +1075,11 @@ cmd_txresp(CMD_ARGS)
 		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
 
 	if (!status_done) {
-			hdr.name = ":status";
-			hdr.value = "200";
-			encNextHdr(iter, &hdr, HdrNot, 0, 0, 0);
-	}
+		ENC(":status", "200");
+	} if (!url_done)
+		ENC(":path", "/");
+	if (!req_done)
+		ENC(":method", "GET");
 
 	f.size = getHdrIterLen(iter);
 	f.data = buf;	
@@ -1116,7 +1089,7 @@ cmd_txresp(CMD_ARGS)
 	if (!body)
 		return;
 
-	f.type = 0x0;
+	f.type = TYPE_DATA;
 	f.size = strlen(body);
 	f.data = body;
 	f.stid = s->id;
@@ -1125,24 +1098,146 @@ cmd_txresp(CMD_ARGS)
 }
 
 static void
-cmd_rxresp(CMD_ARGS)
+cmd_txdata(CMD_ARGS)
+{
+	struct stream *s;
+	struct frame f;
+	char *body = NULL;
+
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	f.type = TYPE_DATA;
+	f.flags |= 0x1; /* END_STREAM */
+	f.size = 0;
+	f.stid = s->id;
+
+	while (*++av) {
+		if (!strcmp(*av, "-data")) {
+			body = av[1];
+			av++;
+		} else if (!strcmp(*av, "-nostrend"))
+			f.flags &= ~0x1;
+		else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	if (!body)
+		body = "";
+
+	f.size = strlen(body);
+	f.data = body;
+	write_frame(s->hp, &f, 4, "txreq (B)");
+}
+
+
+static void
+cmd_rxreqsp(CMD_ARGS)
 {
 	struct stream *s;
 	int end_stream;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	do {
-		if (!grab_hdr(s, vl))
-			return;
-		end_stream = s->frame->flags & 0x1;
-	} while (!(s->frame->flags | 0x4)); /* END_HEADERS */
+	//clean_headers(s);
+	if (!grab_hdr(s, vl, 1))
+		return;
+	end_stream = s->frame->flags & 0x1;
 
-	vtc_log(vl, 3, "B end_stream is %d", end_stream);
-	while (!end_stream) {
-		if (!grab_data(s, vl))
+	while (!(s->frame->flags | 0x4))
+		if (!grab_hdr(s, vl, 0x9))
 			return;
+
+	while (!end_stream && grab_data(s, vl))
 		end_stream = s->frame->flags & 0x1;
+}
+
+static void
+cmd_rxhdrs(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	uint32_t times = 1;
+	int expect = 1;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rx*hdrs spec: %s\n", *av);
+
+	while (times-- || (loop && !(s->frame->flags | 0x4))) {
+		if (!grab_hdr(s, vl, expect))
+			return;
+		expect = 0x9;
 	}
 }
+
+static void
+cmd_rxcont(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	uint32_t times = 1;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
+
+	while (times-- || (loop && !(s->frame->flags | 0x4)))
+		if (!grab_hdr(s, vl, 9))
+			return;
+}
+
+static void
+cmd_rxdata(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	uint32_t times = 1;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rx*body spec: %s\n", *av);
+
+	while (times-- || (loop && !(s->frame->flags | 0x1)))
+		if (!grab_data(s, vl))
+			return;
+}
+
 
 #define CHECK_LAST_FRAME(TYPE) \
 	if (s->ftype != TYPE_ ## TYPE) { \
@@ -1164,6 +1259,18 @@ cmd_rxresp(CMD_ARGS)
 	snprintf(buf, 20, "%d", val); \
 	return (buf); \
 } while (0)
+
+static char *
+find_header(struct stream *s, char *k, int ks) {
+	struct hdrng *h = s->hdrs;
+	int n = s->nhdrs;
+	while (n--) {
+		if (ks == h->key.size  && !memcmp(h->key.ptr, k, ks))
+			return h->value.ptr;
+		h++;
+	}
+	return (NULL);
+}
 
 static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
@@ -1231,6 +1338,18 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		RETURN_BUFFED(s->frame->size);
 	} else if (!strcmp(spec, "frame.stream")) {
 		RETURN_BUFFED(s->frame->stid);
+	} else if (!strcmp(spec, "req.bodylen")) {
+		RETURN_BUFFED(s->bodylen);
+	} else if (!strcmp(spec, "resp.bodylen")) {
+		RETURN_BUFFED(s->bodylen);
+	} else if (!strcmp(spec, "req.body")) {
+		return (s->body);
+	} else if (!strcmp(spec, "resp.body")) {
+		return (s->body);
+	} else if (!memcmp(spec, "req.http.", 9)) {
+		return (find_header(s, spec + 9, strlen(spec + 9)));
+	} else if (!memcmp(spec, "resp.http.", 10)) {
+		return (find_header(s, spec + 10, strlen(spec + 10)));
 	} else
 		return (spec);
 	return(NULL);
@@ -1316,14 +1435,17 @@ static const struct cmds stream_cmds[] = {
 	{ "rxrst",		cmd_rxrst },
 	{ "txgoaway",		cmd_txgoaway },
 	{ "rxgoaway",		cmd_rxgoaway },
-	{ "txreq",		cmd_txreq },
-	{ "rxreq",		cmd_rxreq },
 	{ "txsettings",		cmd_txsettings },
 	{ "rxsettings",		cmd_rxsettings },
-	{ "txreq",		cmd_txreq },
-	{ "rxreq",		cmd_rxreq },
-	{ "txresp",		cmd_txresp },
-	{ "rxresp",		cmd_rxresp },
+	{ "txreq",		cmd_tx11obj },
+	{ "rxreq",		cmd_rxreqsp },
+	{ "txresp",		cmd_tx11obj },
+	{ "rxresp",		cmd_rxreqsp },
+	{ "rxhdrs",		cmd_rxhdrs },
+	{ "rxcont",		cmd_rxcont },
+	{ "txdata",		cmd_txdata },
+	{ "rxdata",		cmd_rxdata },
+	{ "txcont",		cmd_tx11obj },
 	{ "expect",		cmd_http_expect },
 	{ "delay",		cmd_delay },
 	{ "sema",		cmd_sema },
@@ -1341,6 +1463,7 @@ stream_thread(void *priv)
 
 	parse_string(s->spec, stream_cmds, s, s->hp->vl);
 
+	clean_headers(s);
 	vtc_log(s->hp->vl, 2, "Ending stream %lu", s->id);
 	return (NULL);
 }
@@ -1357,6 +1480,7 @@ stream_new(const char *name, struct http2 *h)
 	AN(name);
 	ALLOC_OBJ(s, STREAM_MAGIC);
 	AN(s);
+	pthread_cond_init(&s->cond, NULL);
 	REPLACE(s->name, name);
 	s->ws = 0xffff;
 
@@ -1513,6 +1637,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
 	(void)sfd;
 	ALLOC_OBJ(hp, HTTP2_MAGIC);
 	AN(hp);
+	pthread_mutex_init(&hp->mtx, NULL);
+	pthread_cond_init(&hp->cond, NULL);
 	hp->fd = sock;
 	hp->timeout = vtc_maxdur * 1000 / 2;
 	hp->sfd = sfd;

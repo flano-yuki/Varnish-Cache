@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+
+#include <vas.h>
 
 #include "hpack.h"
 #include "hpack_priv.h"
@@ -196,30 +197,39 @@ str_encode(struct HdrIter *iter, char *str, int huff) {
 	}
 }
 
-char *
-str_decode(struct HdrIter *iter) {
+int
+str_decode(struct HdrIter *iter, struct txt *t) {
 	char str[512] = {0};
 	uint64_t num;
 	int huff, ndec;
 	assert(iter->buf < iter->end);
 	huff = (*iter->buf & 0x80);
 	if (HdrMore != num_decode(&num, iter, 7))
-		return (NULL);
+		return (0);
 	if (num > iter->end - iter->buf)
-		return (NULL);
+		return (0);
 	if (huff) { /*Huffman encoding */
 		ndec = hpack_decode(str, 512, iter, num);
 		if (!ndec)
-			return (NULL);
+			return (0);
 		assert(ndec <= num);
+		t->huff = 1;
+		t->ptr = malloc(ndec + 1);
+		AN(t->ptr);
+		memcpy(t->ptr, str, ndec);
+		t->ptr[ndec] = '\0';
+		t->size = ndec;
 	} else { /* literal string */
-		if (num >= 512)
-			return (NULL);
-		snprintf(str, num+1, "%s", iter->buf);
+		t->huff = 0;
+		t->ptr = malloc(num + 1);
+		AN(t->ptr);
+		memcpy(t->ptr, iter->buf, num);
+		t->ptr[num] = '\0';
+		t->size = num;
 	}
 	iter->buf += num;
 	
-	return (strdup(str));
+	return (1);
 }
 
 enum HdrRet

@@ -18,6 +18,19 @@ enum HdrType {
 	HdrNever,
 };
 
+struct txt {
+	char *ptr;
+	int size;
+	int huff;
+};
+
+struct hdrng {
+	struct txt key;
+	struct txt value;
+	enum HdrType t;
+	int i;
+};
+
 struct stm_ctx;
 struct HdrIter;
 
@@ -29,9 +42,9 @@ destroyStmCtx(struct stm_ctx *ctx);
 struct HdrIter *
 newHdrIter(struct stm_ctx *ctx, char *buf, int size);
 enum HdrRet
-decNextHdr(struct HdrIter *iter, struct hdr *header);
+decNextHdr(struct HdrIter *iter, struct hdrng *header);
 enum HdrRet
-encNextHdr(struct HdrIter *iter, struct hdr *header, enum HdrType type, int idxName, int nhuff, int vhuff);
+encNextHdr(struct HdrIter *iter, struct hdrng *header);
 void
 destroyHdrIter(struct HdrIter *iter);
 

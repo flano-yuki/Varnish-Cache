@@ -2,14 +2,25 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <assert.h>
+
+#include <vas.h>
 
 #include "hpack.h"
 #include "hpack_priv.h"
 
-struct hdr sttbl[] = {
-	{NULL, NULL},
-#define STAT_HDRS(i, n, v) {n, v},
+struct hdrng sttbl[] = {
+	{{NULL, 0}, {NULL, 0}, HdrIdx, 0},
+#define STAT_HDRS(i, k, v) \
+{ \
+	.key = { \
+		.ptr = k, \
+		.size = sizeof(k) - 1 \
+	}, \
+	.value = { \
+		.ptr = v, \
+		.size = sizeof(v) - 1 \
+	}, \
+},
 #include "sttbl.h"
 #undef STAT_HDRS
 };
@@ -36,31 +47,37 @@ pop_header(struct stm_ctx *ctx) {
 	assert(!VTAILQ_EMPTY(&ctx->dyntbl));
 	struct dynhdr *h = VTAILQ_LAST(&ctx->dyntbl, dynamic_table);
 	VTAILQ_REMOVE(&ctx->dyntbl, h, list);
-	ctx->size -= strlen(h->header.name) + strlen(h->header.value) + 32;
-	free(h->header.name);
-	free(h->header.value);
+	ctx->size -= h->header.key.size + h->header.value.size + 32;
+	free(h->header.key.ptr);
+	free(h->header.value.ptr);
 	free(h);
 }
 
 void
-push_header (struct stm_ctx *ctx, const struct hdr *oh) {
+push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 	assert(ctx->maxsize);
 	assert(ctx->size <= ctx->maxsize);
 	assert(oh);
-	assert(oh->name);
-	assert(oh->value);
-	int size = strlen(oh->name) + strlen(oh->value) + 32;
+	//assert(oh->name);
+	//assert(oh->value);
+	int size = oh->key.size + oh->value.size + 32;
 
 	struct dynhdr *h = malloc(sizeof(*h));
 
 	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize - ctx->size < size)
 		pop_header(ctx);
 	if (ctx->maxsize - ctx->size >= size) {
-		h->header.name = strdup(oh->name);
-		h->header.value = strdup(oh->value);
+
+		h->header.key.size = oh->key.size;
+		h->header.key.ptr = malloc(oh->key.size);
+		AN(h->header.key.ptr);
+		memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size);
+		h->header.value.size = oh->value.size;
+		h->header.value.ptr = malloc(oh->value.size);
+		AN(h->header.value.ptr);
+		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.size);
 		VTAILQ_INSERT_HEAD(&ctx->dyntbl, h, list);
 		ctx->size += size;
-		return;
 	}
 
 }
@@ -73,7 +90,7 @@ resizeTable(struct stm_ctx *ctx, uint64_t num) {
 	return (HdrDone);
 }
 
-char *
+struct txt *
 tbl_get_name(struct HdrIter *iter, uint64_t index) {
 	assert(iter);
 	struct stm_ctx *ctx = iter->ctx;
@@ -82,19 +99,19 @@ tbl_get_name(struct HdrIter *iter, uint64_t index) {
 	if (index > 61 + ctx->size)
 		return (NULL);
 	else if (index <= 61)
-		return (ctx->sttbl[index].name);
+		return (&ctx->sttbl[index].key);
 
 	index -= 62;
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
 		if (!index--)
 			break;
 	if (index && dh)
-		return (dh->header.name);
+		return (&dh->header.key);
 	else
 		return (NULL);
 }
 
-char *
+struct txt *
 tbl_get_value(struct HdrIter *iter, uint64_t index) {
 	assert(iter);
 	struct stm_ctx *ctx = iter->ctx;
@@ -103,14 +120,14 @@ tbl_get_value(struct HdrIter *iter, uint64_t index) {
 	if (index > 61 + ctx->size)
 		return (NULL);
 	else if (index <= 61)
-		return (ctx->sttbl[index].value);
+		return (&ctx->sttbl[index].value);
 
 	index -= 62;
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
 		if (!index--)
 			break;
 	if (index && dh)
-		return (dh->header.value);
+		return (&dh->header.value);
 	else
 		return (NULL);
 
@@ -121,7 +138,7 @@ dump_dyn_tbl(struct stm_ctx *ctx) {
 	printf("DUMPING %d/%d\n", ctx->size, ctx->maxsize);
 	struct dynhdr *dh;
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list) {
-		printf(" (%d) %s: %s\n", i++, dh->header.name, dh->header.value);
+		printf(" (%d) %s: %s\n", i++, dh->header.key.ptr, dh->header.value.ptr);
 	}
 	printf("DONE\n");
 }

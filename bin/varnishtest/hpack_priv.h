@@ -1,13 +1,13 @@
 #include "vqueue.h"
 struct dynhdr {
-	struct hdr header;
+	struct hdrng header;
 	VTAILQ_ENTRY(dynhdr)      list;
 };
 
 VTAILQ_HEAD(dynamic_table,dynhdr);
 
 struct stm_ctx {
-	struct hdr *sttbl;
+	struct hdrng *sttbl;
 	struct dynamic_table      dyntbl;
 	int maxsize;
 	int size;
@@ -33,13 +33,13 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix);
 enum HdrRet
 num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num);
 
-char *
+struct txt *
 tbl_get_name(struct HdrIter *iter, uint64_t index);
 
-char *
+struct txt *
 tbl_get_value(struct HdrIter *iter, uint64_t index);
 
-void push_header (struct stm_ctx *ctx, const struct hdr *h);
+void push_header (struct stm_ctx *ctx, const struct hdrng *h);
 
 uint8_t                                                                                                                                                                                                            
 num_simulate(uint8_t prefix, uint64_t num);
@@ -50,5 +50,5 @@ HdrSimulate(struct hdr *header, enum HdrType type, int idxName, int nhuff, int v
 
 enum HdrRet
 str_encode(struct HdrIter *iter, char *str, int huff);
-char *
-str_decode(struct HdrIter *iter);
+int
+str_decode(struct HdrIter *iter, struct txt *t);
