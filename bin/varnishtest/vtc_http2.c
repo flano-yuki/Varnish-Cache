@@ -588,7 +588,7 @@ cmd_txwinup(CMD_ARGS)
 	while (*++av) {
 		if (!strcmp(*av, "-size")) {
 			size = strtoul(*++av, &p, 0);
-			if (*p != '\0' || s->id >= (1 << 31)) {
+			if (*p != '\0' || size >= (1 << 31)) {
 				vtc_log(hp->vl, 0, "Stream id must be a 31-bits integer "
 						"(found %s)", *av);
 			}
