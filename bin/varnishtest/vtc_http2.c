@@ -311,6 +311,16 @@ wait_frame(struct stream *s) {
 	AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
+#define INIT_FRAME(f, ty, sz, id, fl) \
+do { \
+	f.type = TYPE_ ## WINUP; \
+	f.size = sz; \
+	f.stid = id; \
+	f.flags = fl; \
+	f.data = NULL;
+} while(0);
+
+
 #define MAXFRAMESIZE 2048 * 1024
 
 static void
@@ -514,11 +524,7 @@ cmd_txping(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = TYPE_PING;
-	f.size = 8;
-	f.stid = s->id;
-	f.flags = 0;
-	f.data = NULL;
+	INIT_FRAME(f, PING, 8, s->id, 0);
 
 	while (*++av) {
 		if (!strcmp(*av, "-data")) {
@@ -577,10 +583,7 @@ cmd_txwinup(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = TYPE_WINUP;
-	f.size = 4;
-	f.stid = s->id;
-	f.flags = 0;
+	INIT_FRAME(f, WINUP, 4, s->id, 0);
 
 	while (*++av) {
 		if (!strcmp(*av, "-size")) {
@@ -641,10 +644,7 @@ cmd_txrst(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = TYPE_RST;
-	f.size = 4;
-	f.stid = s->id;
-	f.flags = 0;
+	INIT_FRAME(f, RST, 4, s->id, 0);
 
 	while (*++av) {
 		if (!strcmp(*av, "-err")) {
@@ -717,11 +717,7 @@ cmd_txgoaway(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = TYPE_GOAWAY;
-	f.size = 8;
-	f.stid = s->id;
-	f.flags = 0;
-	f.data = NULL;
+	INIT_FRAME(f, GOAWAY, 8, s->id, 0);
 
 	while (*++av) {
 		if (!strcmp(*av, "-err")) {
@@ -841,10 +837,7 @@ cmd_txsettings(CMD_ARGS)
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
-	f.type = TYPE_SETTINGS;
-	f.size = 0;
-	f.stid = s->id;
-	f.flags = 0;
+	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
 
 	while (*++av) {
 		if (!strcmp(*av, "-push")) {
@@ -1004,9 +997,9 @@ static void
 cmd_tx11obj(CMD_ARGS)
 {
 	struct stream *s;
-	int status_done = 0;
-	int req_done = 0;
-	int url_done = 0;
+	int status_done = 1;
+	int req_done = 1;
+	int url_done = 1;
 	char buf[1024*2048];
 	struct HdrIter *iter;
 	struct frame f;
@@ -1021,22 +1014,18 @@ cmd_tx11obj(CMD_ARGS)
 	hdr.value.huff = 0;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
-	if (!strcmp(cmd_str, "txcont")) {
-		status_done = 1;
-		f.type = TYPE_CONT;
-	} else {
+	INIT_FRAME(f, CONT, 0, s->id, END_HEADERS);
+
+	if (strcmp(cmd_str, "txcont"))
 		f.type = TYPE_HEADERS;
-		f.flags = 0x1; /* END_STREAM*/
+		f.flags |= 0x1; /* END_STREAM*/
 		if (!strcmp(cmd_str, "txreq"))
-			status_done = 1;
+			req_done = 0;
+			url_done = 0;
 		else {
-			req_done = 1;
-			url_done = 1;
+			status_done = 0;
 		}
 	}
-	f.flags |= 0x4; /* END_HEADERS */
-	f.size = 0;
-	f.stid = s->id;
 
 	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
 	while (*++av) {
@@ -1106,10 +1095,7 @@ cmd_txdata(CMD_ARGS)
 
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
-	f.type = TYPE_DATA;
-	f.flags |= 0x1; /* END_STREAM */
-	f.size = 0;
-	f.stid = s->id;
+	INIT_FRAME(f, DATA, 0, s->id, END_STREAM);
 
 	while (*++av) {
 		if (!strcmp(*av, "-data")) {
