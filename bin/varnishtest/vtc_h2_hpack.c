@@ -130,6 +130,66 @@ hpack_simulate(char *str, int size, int huff) {
 }
 
 enum HdrRet
+num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
+	uint8_t shift = 0;
+
+	assert(iter->buf < iter->end);
+	assert(prefix);
+	assert(prefix <= 8);
+
+	*result = 0;
+	*result = *iter->buf & (0xff >> (8-prefix));
+	if (*result < (1 << prefix) - 1) {
+		iter->buf++;
+		return (ITER_DONE(iter));
+	}
+
+	do {
+		iter->buf++;
+		if (iter->end == iter->buf)
+			return (HdrErr);
+		/* check for overflow */
+		if (UINT64_MAX - *result < (uint64_t)(*iter->buf & 0x7f) << shift)
+			return (HdrErr);
+
+		*result += (uint64_t)(*iter->buf & 0x7f) << shift;
+		shift += 7;
+	} while (*iter->buf & 0x80);
+	iter->buf++;
+
+	return (ITER_DONE(iter));
+}
+
+enum HdrRet
+num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
+	assert(prefix);
+	assert(prefix <= 8);
+	assert(iter->buf < iter->end);
+
+	uint8_t pmax = (1 << prefix) - 1;
+
+	*iter->buf &= 0xff << prefix;
+	if (num <=  pmax) {
+		*iter->buf++ |= num;
+		return (ITER_DONE(iter));
+	} else if (iter->end - iter->buf < 2)
+		return (HdrErr);
+
+	iter->buf[0] |= pmax;
+	num -= pmax;
+	do {
+		iter->buf++;
+		if (iter->end == iter->buf)
+			return (HdrErr);
+		*iter->buf = num % 128;
+		*iter->buf |= 0x80;
+		num /= 128;
+	} while (num);
+	*iter->buf++ &= 127;
+	return (ITER_DONE(iter));
+}
+
+enum HdrRet
 str_encode(struct HdrIter *iter, struct txt *t) {
 	int slen = hpack_simulate(t->ptr, t->size, t->huff);
 	assert(iter->buf < iter->end);
@@ -190,80 +250,142 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 	return (ITER_DONE(iter));
 }
 
-enum HdrRet
-num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
-	uint8_t shift = 0;
-
-	assert(iter->buf < iter->end);
-	assert(prefix);
-	assert(prefix <= 8);
-
-	*result = 0;
-	*result = *iter->buf & (0xff >> (8-prefix));
-	if (*result < (1 << prefix) - 1) {
-		iter->buf++;
-		return (ITER_DONE(iter));
-	}
-
-	do {
-		iter->buf++;
-		if (iter->end == iter->buf)
-			return (HdrErr);
-		/* check for overflow */
-		if (UINT64_MAX - *result < (uint64_t)(*iter->buf & 0x7f) << shift)
-			return (HdrErr);
-
-		*result += (uint64_t)(*iter->buf & 0x7f) << shift;
-		shift += 7;
-	} while (*iter->buf & 0x80);
-	iter->buf++;
-
-	return (ITER_DONE(iter));
-}
-
-enum HdrRet
-num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
-	assert(prefix);
-	assert(prefix <= 8);
-	assert(iter->buf < iter->end);
-
-	uint8_t pmax = (1 << prefix) - 1;
-
-	*iter->buf &= 0xff << prefix;
-	if (num <=  pmax) {
-		*iter->buf++ |= num;
-		return (ITER_DONE(iter));
-	} else if (iter->end - iter->buf < 2)
-		return (HdrErr);
-
-	iter->buf[0] |= pmax;
-	num -= pmax;
-	do {
-		iter->buf++;
-		if (iter->end == iter->buf)
-			return (HdrErr);
-		*iter->buf = num % 128;
-		*iter->buf |= 0x80;
-		num /= 128;
-	} while (num);
-	*iter->buf++ &= 127;
-	return (ITER_DONE(iter));
-}
-
-uint8_t
-num_simulate(uint8_t prefix, uint64_t num) {
-	uint8_t len = 1;
-	uint8_t pmax = (1 << prefix) - 1;
-	if (num <  pmax)
-		return (len);
-	num -= pmax;
-	do {
-		len++;
-		num /= 128;
-	} while (num);
-	return (len);
+static inline void
+txtcpy(struct txt *to, struct txt *from) {
+	//AZ(to->ptr);
+	to->ptr = malloc(from->size + 1);
+	AN(to->ptr);
+	memcpy(to->ptr, from->ptr, from->size + 1);
+	to->size = from->size;
 }
 
 int getHdrIterLen(struct HdrIter *iter) {
 	return (iter->buf - iter->orig);
+}
+
+enum HdrRet
+decNextHdr(struct HdrIter *iter, struct hdrng *header) {
+	int pref = 0;
+	struct txt *t;
+	uint64_t num;
+	int must_index = 0;
+	assert(iter->buf < iter->end);
+
+	/* Indexed Header Field */
+	if (*iter->buf & 128) {
+		header->t = HdrIdx;
+		if (HdrErr == num_decode(&num, iter, 7))
+			return (HdrErr);
+
+		if (num) { /* indexed name and value*/
+			t = tbl_get_name(iter, num);
+			if (!t)
+				return (HdrErr);
+			txtcpy(&header->key, t);
+
+			t = tbl_get_value(iter, num);
+			if (!t) {
+				free(header->key.ptr);
+				return (HdrErr);
+			}
+
+			txtcpy(&header->value, t);
+
+			if (iter->buf < iter->end)
+				return (HdrMore);
+			else
+				return (HdrDone);
+		} else if (iter->buf == iter->end)
+			return (HdrErr);
+
+	}
+	/* Literal Header Field with Incremental Indexing */
+	else if (*iter->buf >> 6 == 1) {
+		header->t = HdrInc;
+		pref = 6;
+		must_index = 1;
+	}
+	/* Literal Header Field without Indexing */
+	else if (*iter->buf >> 4 == 0) {
+		header->t = HdrNot;
+		pref = 4;
+	}
+	/* Literal Header Field never Indexed */
+	else if (*iter->buf >> 4 == 1) {
+		header->t = HdrNever;
+		pref = 4;
+	}
+	/* Dynamic Table Size Update */
+	else if (*iter->buf >> 5 == 1) {
+		if (HdrDone != num_decode(&num, iter, 5))
+			return (HdrErr);		
+		return resizeTable(iter->ctx, num);
+	} else {
+		return (HdrErr);
+	}
+
+	assert(pref);
+	if (HdrMore != num_decode(&num, iter, pref))
+		return (HdrErr);
+
+	header->i = num;
+	if (num) { /* indexed name */
+		t = tbl_get_name(iter, num);
+		if (!t)
+			return (HdrErr);
+		txtcpy(&header->key, t);
+	} else {
+		if (HdrMore != str_decode(iter, &header->key))
+			return (HdrErr);
+	}
+
+	if (HdrErr == str_decode(iter, &header->value))
+		return (HdrErr);
+
+	if (must_index)
+		push_header(iter->ctx, header);
+	return (ITER_DONE(iter));
+}
+
+enum HdrRet
+encNextHdr(struct HdrIter *iter, struct hdrng *h) {
+	int pref;
+	int must_index = 0;
+	enum HdrRet ret;
+	switch (h->t) {
+		case HdrIdx:
+			*iter->buf = 0x80;
+			num_encode(iter, 7, h->i);
+			return (ITER_DONE(iter));
+		case HdrInc:
+			*iter->buf = 0x40;
+			pref = 6;
+			must_index = 1;
+			break;
+		case HdrNot:
+			*iter->buf = 0x00;
+			pref = 4;
+			break;
+		case HdrNever:
+			*iter->buf = 0x10;
+			pref = 4;
+			break;
+		default:
+			INCOMPL();
+	}
+	if (h->i) {
+		if (HdrMore != num_encode(iter, pref, h->i))
+			return (HdrErr);
+	} else {
+		iter->buf++;
+		if (HdrMore != str_encode(iter, &h->key))
+			return (HdrErr);
+	}
+	ret = str_encode(iter, &h->value);
+	if (ret == HdrErr)
+		return (HdrErr);
+	if (must_index)
+		push_header(iter->ctx, h);
+	return (ret);
+
 }
