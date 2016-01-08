@@ -149,7 +149,7 @@ encNextHdr(struct HdrIter *iter, struct hdrng *h) {
 
 int 
 HdrSimulate(struct hdr *header, enum HdrType type, int idxName, int nhuff, int vhuff) {
-	int len = 1;
+	int len = 0;
 	int res, pref;
 	switch (type) {
 		case HdrIdx:

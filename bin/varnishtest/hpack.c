@@ -8,31 +8,20 @@
 #include "hpack_priv.h"
 
 struct symbol {
-	char chr;
 	int val;
 	short size;
 };
 
-struct node {
-	struct node *left;
-	struct node *right;
-	struct symbol *sym;
-};
-
 static struct symbol coding_table[] = {
-#define HPACK(i, v, l) {i, v, l},
+#define HPACK(i, v, l) {v, l},
 #include "inc.h"
 #undef HPACK
-	{0, 0, 0}
+	{0, 0}
 };
-
-#include "tree.h"
 
 #include "tiptopdec.h"
 
 struct symbol *EOS = &coding_table[256];
-
-static struct node *decoding_tree = &n_0;
 
 int
 hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
@@ -81,47 +70,6 @@ hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
 		} while (cursor < size);
 	}
 	assert(cursor = size + 1);
-	return (cursor/8);
-}
-
-int
-hpack_decode2(char *str, int nm, struct HdrIter *iter, int size) {
-	int cursor = 0;
-	size *= 8;
-	int l = 0;
-	struct node *n;
-	while(cursor < size && nm--) {
-		n = decoding_tree;
-		int isEOS = 1;
-		assert(n);
-		while ((n->left || n->right) && cursor < size) {
-			if ((iter->buf[cursor/8] >> (7 - (cursor%8))) & 1) {
-				if (n->left)
-					n = n->left;
-				else
-					return (0);
-			} else {
-				isEOS = 0;
-				if (n->right)
-					n = n->right;
-				else
-					return (0);
-			}
-			cursor++;
-		}
-		if (cursor == size && isEOS)
-			return (cursor/8);
-		if (!n->sym)
-			return (0); /* decoding error */
-		*(str++) = n->sym->chr;
-	}
-	/* XXX ensure cursor == size ?*/
-	l = 8 - (cursor % 8);
-	if (l > 8 && ((iter->buf[cursor/8] | (0xff >> l)) == (0xff >> l)))
-	{
-		printf("not EOS\n");
-		return (0); /* not EOS */
-	}
 	return (cursor/8);
 }
 
@@ -294,10 +242,11 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
 
 uint8_t
 num_simulate(uint8_t prefix, uint64_t num) {
-	uint8_t len = 0;
+	uint8_t len = 1;
 	uint8_t pmax = (1 << prefix) - 1;
-	if (num <=  pmax)
-		return 1;
+	if (num <  pmax)
+		return (len);
+	num -= pmax;
 	do {
 		len++;
 		num /= 128;

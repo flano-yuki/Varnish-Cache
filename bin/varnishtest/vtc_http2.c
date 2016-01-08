@@ -313,7 +313,7 @@ wait_frame(struct stream *s) {
 
 #define INIT_FRAME(f, ty, sz, id, fl) \
 do { \
-	f.type = TYPE_ ## WINUP; \
+	f.type = TYPE_ ## ty; \
 	f.size = sz; \
 	f.stid = id; \
 	f.flags = fl; \
@@ -397,7 +397,6 @@ receive_frame(void *priv) {
 				"flags: 0x%02x, size: %d",
 				f->stid, type, f->type, f->flags, f->size);
 
-		assert(f->size <= MAXFRAMESIZE );
 		if (f->size) {
 			f->data = malloc(f->size + 1);
 			AN(f->data);
@@ -558,7 +557,7 @@ cmd_rxping(CMD_ARGS)
 		return;
 	f = s->frame;
 
-	if (f->type != 0x6)
+	if (f->type != TYPE_PING)
 		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
 	if (f->size != 8)
 		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", f->size);
@@ -623,7 +622,7 @@ cmd_rxwinup(CMD_ARGS)
 		return;
 	f = s->frame;
 
-	if (f->type != 0x8)
+	if (f->type != TYPE_WINUP)
 		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
 	if (f->size != 4)
 		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
@@ -692,7 +691,7 @@ cmd_rxrst(CMD_ARGS)
 		return;
 	f = s->frame;
 
-	if (f->type != 0x03)
+	if (f->type != TYPE_RST)
 		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", f->type);
 	if (f->size != 4)
 		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
@@ -785,7 +784,7 @@ cmd_rxgoaway(CMD_ARGS)
 		return;
 	f = s->frame;
 
-	if (f->type != 0x07)
+	if (f->type != TYPE_GOAWAY)
 		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", f->type);
 	if (f->size < 8)
 		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
@@ -840,13 +839,13 @@ cmd_txsettings(CMD_ARGS)
 	//TODO dynamic alloc
 	char buf[512];
 	char *cursor = buf;
-	f.data = buf;
 	memset(buf, 0, 512);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
 	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
+	f.data = buf;
 
 	while (*++av) {
 		if (!strcmp(*av, "-push")) {
@@ -894,7 +893,7 @@ cmd_rxsettings(CMD_ARGS)
 		return;
 	f = s->frame;
 
-	if (f->type != 0x04)
+	if (f->type != TYPE_SETTINGS)
 		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", f->type);
 	if (f->size % 6)
 		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
@@ -940,7 +939,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 	if (!s->frame)
 		return (0);
 
-	assert(type == 0x1 || type == 0x9);
+	assert(type == TYPE_HEADERS || type == TYPE_CONT);
 
 	if (s->frame->type != type)
 		vtc_log(vl, 0, "Received something that is not a %s frame (type=0x%x)", type == 1 ? "header" : "continuation", s->frame->type);
@@ -974,7 +973,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 		return (0);
 	f = s->frame;
 
-	if (f->type != 0x00)
+	if (f->type != TYPE_DATA)
 		vtc_log(vl, 0, "Received something that is not a data frame (type=0x%x)", f->type);
 
 	if (!f->size) {
@@ -997,7 +996,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	return (1);
 }
 
-#define ENC(k, v) \
+#define ENC(hdr, k, v) \
 { \
 	hdr.key.ptr = k; \
 	hdr.key.size = strlen(k); \
@@ -1031,7 +1030,7 @@ cmd_tx11obj(CMD_ARGS)
 
 	if (strcmp(cmd_str, "txcont")) {
 		f.type = TYPE_HEADERS;
-		f.flags |= 0x1; /* END_STREAM*/
+		f.flags |= END_STREAM;
 		if (!strcmp(cmd_str, "txreq")) {
 			req_done = 0;
 			url_done = 0;
@@ -1044,32 +1043,32 @@ cmd_tx11obj(CMD_ARGS)
 	while (*++av) {
 		if (!strcmp(*av, "-status") &&
 				!strcmp(cmd_str, "txresp")) {
-			ENC(":status", av[1]);
+			ENC(hdr, ":status", av[1]);
 			av++;
 			status_done = 1;
 		} else if (!strcmp(*av, "-url") &&
 				!strcmp(cmd_str, "txreq")) {
-			ENC(":path", av[1]);
+			ENC(hdr, ":path", av[1]);
 			av++;
 			url_done = 1;
 		} else if (!strcmp(*av, "-req") &&
 				!strcmp(cmd_str, "txreq")) {
-			ENC(":method", av[1]);
+			ENC(hdr, ":method", av[1]);
 			av++;
 			req_done = 1;
 		} else if (!strcmp(*av, "-hdr")) {
-			ENC(av[1], av[2]);
+			ENC(hdr, av[1], av[2]);
 			av += 2;
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
 			body = av[1];
-			f.flags &= ~0x1; /* unset END_STREAM */
+			f.flags &= ~END_STREAM;
 			av++;
 		} else if (!strcmp(*av, "-nostrend") &&
 				strcmp(cmd_str, "txcont")) {
-			f.flags &= ~0x1;
+			f.flags &= ~END_STREAM;
 		} else if (!strcmp(*av, "-nohdrend")) {
-			f.flags &= ~0x4;
+			f.flags &= ~END_HEADERS;
 		} else
 			break;
 	}
@@ -1077,11 +1076,11 @@ cmd_tx11obj(CMD_ARGS)
 		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
 
 	if (!status_done) {
-		ENC(":status", "200");
+		ENC(hdr, ":status", "200");
 	} if (!url_done)
-		ENC(":path", "/");
+		ENC(hdr, ":path", "/");
 	if (!req_done)
-		ENC(":method", "GET");
+		ENC(hdr, ":method", "GET");
 
 	f.size = getHdrIterLen(iter);
 	f.data = buf;	
@@ -1091,11 +1090,9 @@ cmd_tx11obj(CMD_ARGS)
 	if (!body)
 		return;
 
-	f.type = TYPE_DATA;
-	f.size = strlen(body);
+	INIT_FRAME(f, DATA, strlen(body), s->id, END_STREAM);
 	f.data = body;
-	f.stid = s->id;
-	f.flags = 0x1; /* END_STREAM */
+
 	write_frame(s->hp, &f, 4, "txreq (B)");
 }
 
@@ -1115,7 +1112,7 @@ cmd_txdata(CMD_ARGS)
 			body = av[1];
 			av++;
 		} else if (!strcmp(*av, "-nostrend"))
-			f.flags &= ~0x1;
+			f.flags &= ~END_STREAM;
 		else
 			break;
 	}
@@ -1140,14 +1137,14 @@ cmd_rxreqsp(CMD_ARGS)
 	//clean_headers(s);
 	if (!grab_hdr(s, vl, 1))
 		return;
-	end_stream = s->frame->flags & 0x1;
+	end_stream = s->frame->flags & END_STREAM;
 
-	while (!(s->frame->flags | 0x4))
-		if (!grab_hdr(s, vl, 0x9))
+	while (!(s->frame->flags | END_HEADERS))
+		if (!grab_hdr(s, vl, TYPE_CONT))
 			return;
 
 	while (!end_stream && grab_data(s, vl))
-		end_stream = s->frame->flags & 0x1;
+		end_stream = s->frame->flags & END_STREAM;
 }
 
 static void
@@ -1157,7 +1154,8 @@ cmd_rxhdrs(CMD_ARGS)
 	char *p;
 	int loop = 0;
 	uint32_t times = 1;
-	int expect = 1;
+	// XXX make it an enum
+	int expect = TYPE_HEADERS;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
 	while (*++av) {
@@ -1174,10 +1172,10 @@ cmd_rxhdrs(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rx*hdrs spec: %s\n", *av);
 
-	while (times-- || (loop && !(s->frame->flags | 0x4))) {
+	while (times-- || (loop && !(s->frame->flags | END_HEADERS))) {
 		if (!grab_hdr(s, vl, expect))
 			return;
-		expect = 0x9;
+		expect = TYPE_CONT;
 	}
 }
 
@@ -1204,7 +1202,7 @@ cmd_rxcont(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
 
-	while (times-- || (loop && !(s->frame->flags | 0x4)))
+	while (times-- || (loop && !(s->frame->flags | END_HEADERS)))
 		if (!grab_hdr(s, vl, 9))
 			return;
 }
@@ -1232,7 +1230,7 @@ cmd_rxdata(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rx*body spec: %s\n", *av);
 
-	while (times-- || (loop && !(s->frame->flags | 0x1)))
+	while (times-- || (loop && !(s->frame->flags | END_STREAM)))
 		if (!grab_data(s, vl))
 			return;
 }
@@ -1245,7 +1243,6 @@ cmd_rxdata(CMD_ARGS)
 
 #define RETURN_SETTINGS(idx) \
 { \
-	CHECK_LAST_FRAME(SETTINGS); \
 	if isnan(s->md.settings[idx]) { \
 		return (NULL); \
 	} \
@@ -1274,82 +1271,95 @@ find_header(struct stream *s, char *k, int ks) {
 static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
-	//char **hh, *hdr;
-	if (!s->frame)
+	struct frame *f = s->frame;
+	if (!f)
 		vtc_log(s->hp->vl, 0, "No frame received yet.");
 	AN(buf);
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
 		return (s->md.ping.data);
-	} else if (!strcmp(spec, "ping.ack")) {
+	}
+	else if (!strcmp(spec, "ping.ack")) {
 		CHECK_LAST_FRAME(PING);
-		if (s->frame->flags & 1)
+		if (f->flags & 1)
 			snprintf(buf, 20, "true");
 		else
 			snprintf(buf, 20, "false");
 		return (buf);
-	} else if (!strcmp(spec, "winup.size")) {
+	}
+	else if (!strcmp(spec, "winup.size")) {
 		CHECK_LAST_FRAME(WINUP);
 		RETURN_BUFFED(s->md.winup_size);
-	} else if (!strcmp(spec, "rst.err")) {
+	}
+	else if (!strcmp(spec, "rst.err")) {
 		CHECK_LAST_FRAME(RST);
 		RETURN_BUFFED(s->md.rst_err);
-	} else if (!strcmp(spec, "settings.ack")) {
+	} /* SETTINGS */
+	else if (!strncmp(spec, "settings.", 9)) {
 		CHECK_LAST_FRAME(SETTINGS);
-		if (s->frame->flags & 1)
-			snprintf(buf, 20, "true");
-		else
-			snprintf(buf, 20, "false");
-		return (buf);
-	} else if (!strcmp(spec, "settings.hdrtbl")) {
-		RETURN_SETTINGS(1);
-	} else if (!strcmp(spec, "settings.push")) {
-		CHECK_LAST_FRAME(SETTINGS);
-		if (isnan(s->md.settings[2]))
-			return (NULL);
-		else if (s->md.settings[2] == 1)
-			snprintf(buf, 20, "true");
-		else
-			snprintf(buf, 20, "false");
-		return (buf);
-	} else if (!strcmp(spec, "settings.maxstreams")) {
-		RETURN_SETTINGS(3);
-	} else if (!strcmp(spec, "settings.winsize")) {
-		RETURN_SETTINGS(4);
-	} else if (!strcmp(spec, "settings.framesize")) {
-		RETURN_SETTINGS(5);
-	} else if (!strcmp(spec, "settings.hdrsize")) {
-		RETURN_SETTINGS(6);
-	} else if (!strcmp(spec, "goaway.err")) {
+		spec += 9;
+		if (!strcmp(spec, "ack")) {
+			if (f->flags & 1)
+				snprintf(buf, 20, "true");
+			else
+				snprintf(buf, 20, "false");
+			return (buf);
+		}
+		else if (!strcmp(spec, "push")) {
+			if (isnan(s->md.settings[2]))
+				return (NULL);
+			else if (s->md.settings[2] == 1)
+				snprintf(buf, 20, "true");
+			else
+				snprintf(buf, 20, "false");
+			return (buf);
+		}
+		else if (!strcmp(spec, "hdrtbl"))     { RETURN_SETTINGS(1); }
+		else if (!strcmp(spec, "maxstreams")) { RETURN_SETTINGS(3); }
+		else if (!strcmp(spec, "winsize"))    { RETURN_SETTINGS(4); }
+		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
+		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
+	} /* GOAWAY */
+	else if (!strncmp(spec, "goaway.", 7)) {
+		spec += 7;
 		CHECK_LAST_FRAME(GOAWAY);
-		RETURN_BUFFED(s->md.goaway.err);
-	} else if (!strcmp(spec, "goaway.laststream")) {
-		CHECK_LAST_FRAME(GOAWAY);
-		RETURN_BUFFED(s->md.goaway.stream);
-	} else if (!strcmp(spec, "goaway.debug")) {
-		CHECK_LAST_FRAME(GOAWAY);
-		return (s->md.goaway.debug);
-	} else if (!strcmp(spec, "frame.data")) {
-		return (s->frame->data);
-	} else if (!strcmp(spec, "frame.type")) {
-		RETURN_BUFFED(s->frame->type);
-	} else if (!strcmp(spec, "frame.size")) {
-		RETURN_BUFFED(s->frame->size);
-	} else if (!strcmp(spec, "frame.stream")) {
-		RETURN_BUFFED(s->frame->stid);
-	} else if (!strcmp(spec, "req.bodylen")) {
+
+		if (!strcmp(spec, "err")) {
+			RETURN_BUFFED(s->md.goaway.err);
+		}
+		else if (!strcmp(spec, "laststream")) {
+			RETURN_BUFFED(s->md.goaway.stream);
+		}
+		else if (!strcmp(spec, "debug")) {
+			return (s->md.goaway.debug);
+		}
+	} /* GENERIC FRAME */
+	else if (!strncmp(spec, "frame.", 6)) {
+		spec += 6;
+		     if (!strcmp(spec, "data"))   { return (f->data); }
+		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
+		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
+		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
+	}
+	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
-	} else if (!strcmp(spec, "resp.bodylen")) {
+	}
+	else if (!strcmp(spec, "resp.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
-	} else if (!strcmp(spec, "req.body")) {
+	}
+	else if (!strcmp(spec, "req.body")) {
 		return (s->body);
-	} else if (!strcmp(spec, "resp.body")) {
+	}
+	else if (!strcmp(spec, "resp.body")) {
 		return (s->body);
-	} else if (!memcmp(spec, "req.http.", 9)) {
+	}
+	else if (!memcmp(spec, "req.http.", 9)) {
 		return (find_header(s, spec + 9, strlen(spec + 9)));
-	} else if (!memcmp(spec, "resp.http.", 10)) {
+	}
+	else if (!memcmp(spec, "resp.http.", 10)) {
 		return (find_header(s, spec + 10, strlen(spec + 10)));
-	} else
+	}
+	else
 		return (spec);
 	return(NULL);
 }
