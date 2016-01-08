@@ -146,36 +146,3 @@ encNextHdr(struct HdrIter *iter, struct hdrng *h) {
 	return (ret);
 
 }
-
-int 
-HdrSimulate(struct hdr *header, enum HdrType type, int idxName, int nhuff, int vhuff) {
-	int len = 0;
-	int res, pref;
-	switch (type) {
-		case HdrIdx:
-			return (1);
-			break;
-		case HdrInc:
-			pref = 6;
-			break;
-		case HdrNot:
-			pref = 4;
-			break;
-		case HdrNever:
-			pref = 4;
-			break;
-		default:
-			assert(1);
-	}
-	res = hpack_simulate(header->value, vhuff);
-	len += res;
-	res = num_simulate(7, res);
-	len += res;
-
-	if (!idxName) {
-		res = hpack_simulate(header->name, nhuff);
-		len += res;
-		len += num_simulate(pref, res);
-	}
-	return (len);
-}

@@ -45,8 +45,6 @@ uint8_t
 num_simulate(uint8_t prefix, uint64_t num);
 int
 hpack_simulate(char *str, int huff);
-int 
-HdrSimulate(struct hdr *header, enum HdrType type, int idxName, int nhuff, int vhuff);
 
 enum HdrRet
 str_encode(struct HdrIter *iter, char *str, int huff);
