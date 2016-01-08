@@ -1,10 +1,5 @@
 #include <stdint.h>
 
-struct hdr {
-	char *name;
-	char *value;
-};
-
 enum HdrRet{
 	HdrMore = 0,
 	HdrDone,
