@@ -512,412 +512,6 @@ cmd_rxframe(CMD_ARGS)
 }
 
 static void
-cmd_txping(CMD_ARGS)
-{
-	struct http2 *hp;
-	struct stream *s;
-	struct frame f;
-	char buf[8];
-	memset(buf, 0, 8);
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
-	INIT_FRAME(f, PING, 8, s->id, 0);
-
-	while (*++av) {
-		if (!strcmp(*av, "-data")) {
-			av++;
-			if (f.data)
-				vtc_log(hp->vl, 0, "this frame already has data");
-			if (strlen(*av) != 8) {
-				vtc_log(hp->vl, 0, "data must be a 8-char string, found  (%s)", *av);
-			}
-			f.data = *av;
-		} else if (!strcmp(*av, "-ack")) {
-			f.flags |= 1;
-		} else
-			break;
-	}
-	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txping spec: %s\n", *av);
-	if (!f.data)
-		f.data = buf;
-	write_frame(hp, &f, 4, "txping");
-}
-
-static void
-cmd_rxping(CMD_ARGS)
-{
-	struct stream *s;
-	struct frame *f;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame)
-		return;
-	f = s->frame;
-
-	if (f->type != TYPE_PING)
-		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
-	if (f->size != 8)
-		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", f->size);
-
-	s->md.ping.ack = f->flags & 1;
-	memcpy(s->md.ping.data, f->data, 8);
-	s->md.ping.data[8] = '\0';
-
-	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
-}
-
-static void
-cmd_txwinup(CMD_ARGS)
-{
-	struct http2 *hp;
-	struct stream *s;
-	char *p;
-	struct frame f;
-	char buf[8];
-	uint32_t size = 0x7fffffff; 
-	f.data = buf;
-	memset(buf, 0, 8);
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
-	INIT_FRAME(f, WINUP, 4, s->id, 0);
-
-	while (*++av) {
-		if (!strcmp(*av, "-size")) {
-			size = strtoul(*++av, &p, 0);
-			if (*p != '\0' || size >= (1 << 31)) {
-				vtc_log(hp->vl, 0, "Stream id must be a 31-bits integer "
-						"(found %s)", *av);
-			}
-			//XXX: if not fatal, reset size
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
-	if (0x7fffffff - s->ws < size)
-		s->ws = size;
-	else
-		s->ws += size;
-
-	size = htonl(size);
-	f.data = (void *)&size;
-	write_frame(hp, &f, 4, "txwinup");
-}
-
-
-static void
-cmd_rxwinup(CMD_ARGS)
-{
-	struct stream *s;
-	struct frame *f;
-	uint32_t size;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame)
-		return;
-	f = s->frame;
-
-	if (f->type != TYPE_WINUP)
-		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
-	if (f->size != 4)
-		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
-	if (f->data[0] & (1<<7))
-		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
-
-	size = ntohl(*(uint32_t*)f->data);
-	s->md.winup_size = size;
-
-	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
-}
-
-static void
-cmd_txrst(CMD_ARGS)
-{
-	struct http2 *hp;
-	struct stream *s;
-	char *p;
-	uint32_t err;
-	struct frame f;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
-	INIT_FRAME(f, RST, 4, s->id, 0);
-
-	while (*++av) {
-		if (!strcmp(*av, "-err")) {
-			++av;
-			for (err=0; h2_errs[err]; err++) {
-				if (!strcmp(h2_errs[err], *av))
-					break;
-			}
-			
-			if (h2_errs[err])
-				continue;
-				
-			err = strtoul(*av, &p, 0);
-			if (*p != '\0' || err > UINT32_MAX) {
-				vtc_log(hp->vl, 0, "Stream id must be a 32-bits integer "
-						"(found %s)", *av);
-			}
-			//XXX: if not fatal, reset size
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txrst spec: %s\n", *av);
-
-	err = htonl(err);
-	f.data = (void *)&err;
-	write_frame(hp, &f, 4, "txrst");
-}
-
-
-static void
-cmd_rxrst(CMD_ARGS)
-{
-	struct frame *f;
-	struct stream *s;
-	uint32_t err;
-	char *buf;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame)
-		return;
-	f = s->frame;
-
-	if (f->type != TYPE_RST)
-		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", f->type);
-	if (f->size != 4)
-		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
-
-	err = ntohl(*(uint32_t*)f->data);
-	s->md.rst_err = err;
-
-	if (err <= ERR_MAX)
-		buf = h2_errs[err];
-	else
-		buf = "unknown";
-	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
-}
-
-static void
-cmd_txgoaway(CMD_ARGS)
-{
-	struct http2 *hp;
-	struct stream *s;
-	char *p;
-	uint32_t err = 0;
-	uint32_t ls = 0;
-	struct frame f;
-	char buf[8];
-	f.data = buf;
-	memset(buf, 0, 8);
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
-	INIT_FRAME(f, GOAWAY, 8, s->id, 0);
-
-	while (*++av) {
-		if (!strcmp(*av, "-err")) {
-			++av;
-			for (err=0; h2_errs[err]; err++) {
-				if (!strcmp(h2_errs[err], *av))
-					break;
-			}
-			
-			if (h2_errs[err])
-				continue;
-				
-			err = strtoul(*av, &p, 0);
-			if (*p != '\0' || err > UINT32_MAX) {
-				vtc_log(hp->vl, 0, "Error must be a 32-bits integer "
-						"(found %s)", *av);
-			}
-			//XXX: if not fatal, reset size
-		} else if (!strcmp(*av, "-laststream")) {
-			++av;
-			ls = strtoul(*av, &p, 0);
-			if (*p != '\0' || ls >= (1 << 31)) {
-				vtc_log(hp->vl, 0, "Last stream id must be a 31-bits integer "
-						"(found %s)", *av);
-			}
-		} else if (!strcmp(*av, "-debug")) {
-			++av;
-			if (f.data)
-				vtc_log(hp->vl, 0, "this frame already has debug data");
-			f.size = 8 + strlen(*av);
-			f.data = malloc(f.size);
-			memcpy(f.data + 8, *av, f.size - 8);
-		} else
-			break;
-	}
-	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txgoaway spec: %s\n", *av);
-
-	if (!f.data)
-		f.data = malloc(2);
-	((uint32_t*)f.data)[0] = htonl(ls);
-	((uint32_t*)f.data)[1] = htonl(err);
-	write_frame(hp, &f, 4, "txgoaway");
-	free(f.data);
-}
-
-
-static void
-cmd_rxgoaway(CMD_ARGS)
-{
-	struct frame *f;
-	struct stream *s;
-	char *err_buf;
-	uint32_t err, stid;
-
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame)
-		return;
-	f = s->frame;
-
-	if (f->type != TYPE_GOAWAY)
-		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", f->type);
-	if (f->size < 8)
-		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
-	if (f->data[0] & (1<<7))
-		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
-
-	stid = ntohl(((uint32_t*)f->data)[0]);
-	err = ntohl(((uint32_t*)f->data)[1]);
-	s->md.goaway.err = err;
-	s->md.goaway.stream = stid;
-
-	if (err <= ERR_MAX)
-		err_buf = h2_errs[err];
-	else
-		err_buf = "unknown";
-
-	if (f->size > 8) {
-		s->md.goaway.debug = malloc(f->size - 8 + 1);
-		AN(s->md.goaway.debug);
-		s->md.goaway.debug[f->size - 8] = '\0';
-
-		memcpy(s->md.goaway.debug, f->data + 8, f->size - 8);
-	}
-
-	vtc_log(vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
-	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
-	if (s->md.goaway.debug)
-		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
-}
-
-#define PUT_KV(name, code) \
-	av++;\
-	val = strtoul(*av, &p, 0);\
-	if (*p != '\0' || val > UINT32_MAX) {\
-		vtc_log(hp->vl, 0, "name must be a 32-bits integer "\
-			"(found %s)", *av);\
-	}\
-	*(uint16_t *)cursor = htons(code);\
-	cursor += sizeof(uint16_t);\
-	*(uint32_t *)cursor = htonl(val);\
-	cursor += sizeof(uint32_t);\
-	f.size += 6;\
-
-static void
-cmd_txsettings(CMD_ARGS)
-{
-	struct http2 *hp;
-	struct stream *s;
-	char *p;
-	uint32_t val = 0;
-	struct frame f;
-	//TODO dynamic alloc
-	char buf[512];
-	char *cursor = buf;
-	memset(buf, 0, 512);
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
-	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
-	f.data = buf;
-
-	while (*++av) {
-		if (!strcmp(*av, "-push")) {
-			++av;
-			*(uint16_t *)cursor = htons(0x2);
-			cursor += sizeof(uint16_t);
-			if (!strcmp(*av, "false"))
-				*(uint32_t *)cursor = htonl(0);
-			else if (!strcmp(*av, "true"))
-				*(uint32_t *)cursor = htonl(1);
-			else
-				vtc_log(hp->vl, 0, "Push parameter is either "
-						"\"true\" or \"false\", not %s",
-						*av);
-			cursor += sizeof(uint32_t);
-			f.size += 6;
-		} else if (!strcmp(*av, "-hdrtbl"))	{ PUT_KV(hdrtbl, 0x1)
-		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(maxstreams, 0x3)
-		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(winsize, 0x4)
-		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(framesize, 0x5)
-		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(hdrsize, 0x6)
-		} else if (!strcmp(*av, "-ack")) {
-			f.flags |= 1;
-		} else
-			break;
-	}
-	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
-
-	write_frame(hp, &f, 4, "txsettings");
-}
-
-static void
-cmd_rxsettings(CMD_ARGS)
-{
-	struct stream *s;
-	char *buf;
-	int i = 0;
-	uint16_t t;
-	uint32_t v;
-	struct frame *f;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame)
-		return;
-	f = s->frame;
-
-	if (f->type != TYPE_SETTINGS)
-		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", f->type);
-	if (f->size % 6)
-		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
-
-	for (i = 0; i < SETTINGS_MAX; i++)
-		s->md.settings[i] = NAN;
-
-	for (i = 0; i < f->size;) {
-		t = ntohs(*(uint16_t *)(f->data + i));
-		i += 2;
-		v = ntohl(*(uint32_t *)(f->data + i));
-		if (t <= SETTINGS_MAX) {
-			buf = h2_settings[t];
-			s->md.settings[t] = v;
-			vtc_log(vl, 3, "putting %d into %d", v, t);
-		} else
-			buf = "unknown";
-		i += 4;
-
-		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
-	}
-}
-
-static void
 clean_headers(struct stream *s) {
 	struct hdrng *h = s->hdrs;
 	while (s->nhdrs--) {
@@ -1005,6 +599,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	encNextHdr(iter, &hdr); \
 }
 
+/* handles txcont, txreq and txresp */
 static void
 cmd_tx11obj(CMD_ARGS)
 {
@@ -1127,6 +722,34 @@ cmd_txdata(CMD_ARGS)
 	write_frame(s->hp, &f, 4, "txreq (B)");
 }
 
+static void
+cmd_rxdata(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	uint32_t times = 1;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rx*body spec: %s\n", *av);
+
+	while (times-- || (loop && !(s->frame->flags | END_STREAM)))
+		if (!grab_data(s, vl))
+			return;
+}
+
 
 static void
 cmd_rxreqsp(CMD_ARGS)
@@ -1179,6 +802,418 @@ cmd_rxhdrs(CMD_ARGS)
 	}
 }
 
+
+static void
+cmd_txrst(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t err;
+	struct frame f;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, RST, 4, s->id, 0);
+
+	while (*++av) {
+		if (!strcmp(*av, "-err")) {
+			++av;
+			for (err=0; h2_errs[err]; err++) {
+				if (!strcmp(h2_errs[err], *av))
+					break;
+			}
+			
+			if (h2_errs[err])
+				continue;
+				
+			err = strtoul(*av, &p, 0);
+			if (*p != '\0' || err > UINT32_MAX) {
+				vtc_log(hp->vl, 0, "Stream id must be a 32-bits integer "
+						"(found %s)", *av);
+			}
+			//XXX: if not fatal, reset size
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txrst spec: %s\n", *av);
+
+	err = htonl(err);
+	f.data = (void *)&err;
+	write_frame(hp, &f, 4, "txrst");
+}
+
+
+static void
+cmd_rxrst(CMD_ARGS)
+{
+	struct frame *f;
+	struct stream *s;
+	uint32_t err;
+	char *buf;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+	f = s->frame;
+
+	if (f->type != TYPE_RST)
+		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", f->type);
+	if (f->size != 4)
+		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
+
+	err = ntohl(*(uint32_t*)f->data);
+	s->md.rst_err = err;
+
+	if (err <= ERR_MAX)
+		buf = h2_errs[err];
+	else
+		buf = "unknown";
+	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+}
+
+#define PUT_KV(name, code) \
+	av++;\
+	val = strtoul(*av, &p, 0);\
+	if (*p != '\0' || val > UINT32_MAX) {\
+		vtc_log(hp->vl, 0, "name must be a 32-bits integer "\
+			"(found %s)", *av);\
+	}\
+	*(uint16_t *)cursor = htons(code);\
+	cursor += sizeof(uint16_t);\
+	*(uint32_t *)cursor = htonl(val);\
+	cursor += sizeof(uint32_t);\
+	f.size += 6;\
+
+static void
+cmd_txsettings(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t val = 0;
+	struct frame f;
+	//TODO dynamic alloc
+	char buf[512];
+	char *cursor = buf;
+	memset(buf, 0, 512);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
+	f.data = buf;
+
+	while (*++av) {
+		if (!strcmp(*av, "-push")) {
+			++av;
+			*(uint16_t *)cursor = htons(0x2);
+			cursor += sizeof(uint16_t);
+			if (!strcmp(*av, "false"))
+				*(uint32_t *)cursor = htonl(0);
+			else if (!strcmp(*av, "true"))
+				*(uint32_t *)cursor = htonl(1);
+			else
+				vtc_log(hp->vl, 0, "Push parameter is either "
+						"\"true\" or \"false\", not %s",
+						*av);
+			cursor += sizeof(uint32_t);
+			f.size += 6;
+		} else if (!strcmp(*av, "-hdrtbl"))	{ PUT_KV(hdrtbl, 0x1)
+		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(maxstreams, 0x3)
+		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(winsize, 0x4)
+		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(framesize, 0x5)
+		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(hdrsize, 0x6)
+		} else if (!strcmp(*av, "-ack")) {
+			f.flags |= 1;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	write_frame(hp, &f, 4, "txsettings");
+}
+
+static void
+cmd_rxsettings(CMD_ARGS)
+{
+	struct stream *s;
+	char *buf;
+	int i = 0;
+	uint16_t t;
+	uint32_t v;
+	struct frame *f;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+	f = s->frame;
+
+	if (f->type != TYPE_SETTINGS)
+		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", f->type);
+	if (f->size % 6)
+		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
+
+	for (i = 0; i < SETTINGS_MAX; i++)
+		s->md.settings[i] = NAN;
+
+	for (i = 0; i < f->size;) {
+		t = ntohs(*(uint16_t *)(f->data + i));
+		i += 2;
+		v = ntohl(*(uint32_t *)(f->data + i));
+		if (t <= SETTINGS_MAX) {
+			buf = h2_settings[t];
+			s->md.settings[t] = v;
+			vtc_log(vl, 3, "putting %d into %d", v, t);
+		} else
+			buf = "unknown";
+		i += 4;
+
+		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+	}
+}
+
+/*
+static void
+cmd_txpush(CMD_ARGS)
+
+static void
+cmd_txpush(CMD_ARGS)
+*/
+static void
+cmd_txping(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	struct frame f;
+	char buf[8];
+	memset(buf, 0, 8);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, PING, 8, s->id, 0);
+
+	while (*++av) {
+		if (!strcmp(*av, "-data")) {
+			av++;
+			if (f.data)
+				vtc_log(hp->vl, 0, "this frame already has data");
+			if (strlen(*av) != 8) {
+				vtc_log(hp->vl, 0, "data must be a 8-char string, found  (%s)", *av);
+			}
+			f.data = *av;
+		} else if (!strcmp(*av, "-ack")) {
+			f.flags |= 1;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txping spec: %s\n", *av);
+	if (!f.data)
+		f.data = buf;
+	write_frame(hp, &f, 4, "txping");
+}
+
+static void
+cmd_rxping(CMD_ARGS)
+{
+	struct stream *s;
+	struct frame *f;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+	f = s->frame;
+
+	if (f->type != TYPE_PING)
+		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
+	if (f->size != 8)
+		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", f->size);
+
+	s->md.ping.ack = f->flags & 1;
+	memcpy(s->md.ping.data, f->data, 8);
+	s->md.ping.data[8] = '\0';
+
+	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
+}
+
+
+static void
+cmd_txgoaway(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t err = 0;
+	uint32_t ls = 0;
+	struct frame f;
+	char buf[8];
+	f.data = buf;
+	memset(buf, 0, 8);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, GOAWAY, 8, s->id, 0);
+
+	while (*++av) {
+		if (!strcmp(*av, "-err")) {
+			++av;
+			for (err=0; h2_errs[err]; err++) {
+				if (!strcmp(h2_errs[err], *av))
+					break;
+			}
+			
+			if (h2_errs[err])
+				continue;
+				
+			err = strtoul(*av, &p, 0);
+			if (*p != '\0' || err > UINT32_MAX) {
+				vtc_log(hp->vl, 0, "Error must be a 32-bits integer "
+						"(found %s)", *av);
+			}
+			//XXX: if not fatal, reset size
+		} else if (!strcmp(*av, "-laststream")) {
+			++av;
+			ls = strtoul(*av, &p, 0);
+			if (*p != '\0' || ls >= (1 << 31)) {
+				vtc_log(hp->vl, 0, "Last stream id must be a 31-bits integer "
+						"(found %s)", *av);
+			}
+		} else if (!strcmp(*av, "-debug")) {
+			++av;
+			if (f.data)
+				vtc_log(hp->vl, 0, "this frame already has debug data");
+			f.size = 8 + strlen(*av);
+			f.data = malloc(f.size);
+			memcpy(f.data + 8, *av, f.size - 8);
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txgoaway spec: %s\n", *av);
+
+	if (!f.data)
+		f.data = malloc(2);
+	((uint32_t*)f.data)[0] = htonl(ls);
+	((uint32_t*)f.data)[1] = htonl(err);
+	write_frame(hp, &f, 4, "txgoaway");
+	free(f.data);
+}
+
+static void
+cmd_rxgoaway(CMD_ARGS)
+{
+	struct frame *f;
+	struct stream *s;
+	char *err_buf;
+	uint32_t err, stid;
+
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+	f = s->frame;
+
+	if (f->type != TYPE_GOAWAY)
+		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", f->type);
+	if (f->size < 8)
+		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
+		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
+
+	stid = ntohl(((uint32_t*)f->data)[0]);
+	err = ntohl(((uint32_t*)f->data)[1]);
+	s->md.goaway.err = err;
+	s->md.goaway.stream = stid;
+
+	if (err <= ERR_MAX)
+		err_buf = h2_errs[err];
+	else
+		err_buf = "unknown";
+
+	if (f->size > 8) {
+		s->md.goaway.debug = malloc(f->size - 8 + 1);
+		AN(s->md.goaway.debug);
+		s->md.goaway.debug[f->size - 8] = '\0';
+
+		memcpy(s->md.goaway.debug, f->data + 8, f->size - 8);
+	}
+
+	vtc_log(vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
+	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
+	if (s->md.goaway.debug)
+		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
+}
+static void
+cmd_txwinup(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	struct frame f;
+	char buf[8];
+	uint32_t size = 0x7fffffff; 
+	f.data = buf;
+	memset(buf, 0, 8);
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, WINUP, 4, s->id, 0);
+
+	while (*++av) {
+		if (!strcmp(*av, "-size")) {
+			size = strtoul(*++av, &p, 0);
+			if (*p != '\0' || size >= (1 << 31)) {
+				vtc_log(hp->vl, 0, "Stream id must be a 31-bits integer "
+						"(found %s)", *av);
+			}
+			//XXX: if not fatal, reset size
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
+	if (0x7fffffff - s->ws < size)
+		s->ws = size;
+	else
+		s->ws += size;
+
+	size = htonl(size);
+	f.data = (void *)&size;
+	write_frame(hp, &f, 4, "txwinup");
+}
+
+static void
+cmd_rxwinup(CMD_ARGS)
+{
+	struct stream *s;
+	struct frame *f;
+	uint32_t size;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame)
+		return;
+	f = s->frame;
+
+	if (f->type != TYPE_WINUP)
+		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
+	if (f->size != 4)
+		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
+		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
+
+	size = ntohl(*(uint32_t*)f->data);
+	s->md.winup_size = size;
+
+	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
+}
+
 static void
 cmd_rxcont(CMD_ARGS)
 {
@@ -1206,35 +1241,6 @@ cmd_rxcont(CMD_ARGS)
 		if (!grab_hdr(s, vl, 9))
 			return;
 }
-
-static void
-cmd_rxdata(CMD_ARGS)
-{
-	struct stream *s;
-	char *p;
-	int loop = 0;
-	uint32_t times = 1;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-
-	while (*++av) {
-		if (!strcmp(*av, "-some")) {
-			times = strtoul(*++av, &p, 0);
-			if (*p != '\0') {
-				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
-			}
-		} else if (!strcmp(*av, "-all")) {
-			loop = 1;
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rx*body spec: %s\n", *av);
-
-	while (times-- || (loop && !(s->frame->flags | END_STREAM)))
-		if (!grab_data(s, vl))
-			return;
-}
-
 
 #define CHECK_LAST_FRAME(TYPE) \
 	if (s->ftype != TYPE_ ## TYPE) { \
