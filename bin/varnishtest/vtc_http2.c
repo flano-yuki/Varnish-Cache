@@ -427,22 +427,134 @@ receive_frame(void *priv) {
 	return (NULL);
 }
 
-static void
-cmd_fatal(CMD_ARGS)
-{
-	struct http2 *hp;
-	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
-
-	AZ(av[1]);
-	if (!strcmp(av[0], "fatal"))
-		hp->fatal = 0;
-	else if (!strcmp(av[0], "non-fatal"))
-		hp->fatal = -1;
-	else {
-		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
+#define CHECK_LAST_FRAME(TYPE) \
+	if (s->ftype != TYPE_ ## TYPE) { \
+		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
 	}
+
+#define RETURN_SETTINGS(idx) \
+{ \
+	if isnan(s->md.settings[idx]) { \
+		return (NULL); \
+	} \
+	snprintf(buf, 20, "%.0f", s->md.settings[idx]); \
+	return (buf); \
+} while (0);
+
+#define RETURN_BUFFED(val) \
+{ \
+	snprintf(buf, 20, "%d", val); \
+	return (buf); \
+} while (0)
+
+static char *
+find_header(struct stream *s, char *k, int ks) {
+	struct hdrng *h = s->hdrs;
+	int n = s->nhdrs;
+	while (n--) {
+		if (ks == h->key.size  && !memcmp(h->key.ptr, k, ks))
+			return h->value.ptr;
+		h++;
+	}
+	return (NULL);
 }
-#define TRUST_ME(ptr)   ((void*)(uintptr_t)(ptr))
+
+static const char *
+cmd_var_resolve(struct stream *s, char *spec, char *buf)
+{
+	struct frame *f = s->frame;
+	if (!f)
+		vtc_log(s->hp->vl, 0, "No frame received yet.");
+	AN(buf);
+	if (!strcmp(spec, "ping.data")) {
+		CHECK_LAST_FRAME(PING);
+		return (s->md.ping.data);
+	}
+	else if (!strcmp(spec, "ping.ack")) {
+		CHECK_LAST_FRAME(PING);
+		if (f->flags & 1)
+			snprintf(buf, 20, "true");
+		else
+			snprintf(buf, 20, "false");
+		return (buf);
+	}
+	else if (!strcmp(spec, "winup.size")) {
+		CHECK_LAST_FRAME(WINUP);
+		RETURN_BUFFED(s->md.winup_size);
+	}
+	else if (!strcmp(spec, "rst.err")) {
+		CHECK_LAST_FRAME(RST);
+		RETURN_BUFFED(s->md.rst_err);
+	} /* SETTINGS */
+	else if (!strncmp(spec, "settings.", 9)) {
+		CHECK_LAST_FRAME(SETTINGS);
+		spec += 9;
+		if (!strcmp(spec, "ack")) {
+			if (f->flags & 1)
+				snprintf(buf, 20, "true");
+			else
+				snprintf(buf, 20, "false");
+			return (buf);
+		}
+		else if (!strcmp(spec, "push")) {
+			if (isnan(s->md.settings[2]))
+				return (NULL);
+			else if (s->md.settings[2] == 1)
+				snprintf(buf, 20, "true");
+			else
+				snprintf(buf, 20, "false");
+			return (buf);
+		}
+		else if (!strcmp(spec, "hdrtbl"))     { RETURN_SETTINGS(1); }
+		else if (!strcmp(spec, "maxstreams")) { RETURN_SETTINGS(3); }
+		else if (!strcmp(spec, "winsize"))    { RETURN_SETTINGS(4); }
+		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
+		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
+	} /* GOAWAY */
+	else if (!strncmp(spec, "goaway.", 7)) {
+		spec += 7;
+		CHECK_LAST_FRAME(GOAWAY);
+
+		if (!strcmp(spec, "err")) {
+			RETURN_BUFFED(s->md.goaway.err);
+		}
+		else if (!strcmp(spec, "laststream")) {
+			RETURN_BUFFED(s->md.goaway.stream);
+		}
+		else if (!strcmp(spec, "debug")) {
+			return (s->md.goaway.debug);
+		}
+	} /* GENERIC FRAME */
+	else if (!strncmp(spec, "frame.", 6)) {
+		spec += 6;
+		     if (!strcmp(spec, "data"))   { return (f->data); }
+		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
+		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
+		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
+	}
+	else if (!strcmp(spec, "req.bodylen")) {
+		RETURN_BUFFED(s->bodylen);
+	}
+	else if (!strcmp(spec, "resp.bodylen")) {
+		RETURN_BUFFED(s->bodylen);
+	}
+	else if (!strcmp(spec, "req.body")) {
+		return (s->body);
+	}
+	else if (!strcmp(spec, "resp.body")) {
+		return (s->body);
+	}
+	else if (!memcmp(spec, "req.http.", 9)) {
+		return (find_header(s, spec + 9, strlen(spec + 9)));
+	}
+	else if (!memcmp(spec, "resp.http.", 10)) {
+		return (find_header(s, spec + 10, strlen(spec + 10)));
+	}
+	else
+		return (spec);
+	return(NULL);
+}
+
 
 char pri_string[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
@@ -1242,134 +1354,6 @@ cmd_rxcont(CMD_ARGS)
 			return;
 }
 
-#define CHECK_LAST_FRAME(TYPE) \
-	if (s->ftype != TYPE_ ## TYPE) { \
-		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
-	}
-
-#define RETURN_SETTINGS(idx) \
-{ \
-	if isnan(s->md.settings[idx]) { \
-		return (NULL); \
-	} \
-	snprintf(buf, 20, "%.0f", s->md.settings[idx]); \
-	return (buf); \
-} while (0);
-
-#define RETURN_BUFFED(val) \
-{ \
-	snprintf(buf, 20, "%d", val); \
-	return (buf); \
-} while (0)
-
-static char *
-find_header(struct stream *s, char *k, int ks) {
-	struct hdrng *h = s->hdrs;
-	int n = s->nhdrs;
-	while (n--) {
-		if (ks == h->key.size  && !memcmp(h->key.ptr, k, ks))
-			return h->value.ptr;
-		h++;
-	}
-	return (NULL);
-}
-
-static const char *
-cmd_var_resolve(struct stream *s, char *spec, char *buf)
-{
-	struct frame *f = s->frame;
-	if (!f)
-		vtc_log(s->hp->vl, 0, "No frame received yet.");
-	AN(buf);
-	if (!strcmp(spec, "ping.data")) {
-		CHECK_LAST_FRAME(PING);
-		return (s->md.ping.data);
-	}
-	else if (!strcmp(spec, "ping.ack")) {
-		CHECK_LAST_FRAME(PING);
-		if (f->flags & 1)
-			snprintf(buf, 20, "true");
-		else
-			snprintf(buf, 20, "false");
-		return (buf);
-	}
-	else if (!strcmp(spec, "winup.size")) {
-		CHECK_LAST_FRAME(WINUP);
-		RETURN_BUFFED(s->md.winup_size);
-	}
-	else if (!strcmp(spec, "rst.err")) {
-		CHECK_LAST_FRAME(RST);
-		RETURN_BUFFED(s->md.rst_err);
-	} /* SETTINGS */
-	else if (!strncmp(spec, "settings.", 9)) {
-		CHECK_LAST_FRAME(SETTINGS);
-		spec += 9;
-		if (!strcmp(spec, "ack")) {
-			if (f->flags & 1)
-				snprintf(buf, 20, "true");
-			else
-				snprintf(buf, 20, "false");
-			return (buf);
-		}
-		else if (!strcmp(spec, "push")) {
-			if (isnan(s->md.settings[2]))
-				return (NULL);
-			else if (s->md.settings[2] == 1)
-				snprintf(buf, 20, "true");
-			else
-				snprintf(buf, 20, "false");
-			return (buf);
-		}
-		else if (!strcmp(spec, "hdrtbl"))     { RETURN_SETTINGS(1); }
-		else if (!strcmp(spec, "maxstreams")) { RETURN_SETTINGS(3); }
-		else if (!strcmp(spec, "winsize"))    { RETURN_SETTINGS(4); }
-		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
-		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
-	} /* GOAWAY */
-	else if (!strncmp(spec, "goaway.", 7)) {
-		spec += 7;
-		CHECK_LAST_FRAME(GOAWAY);
-
-		if (!strcmp(spec, "err")) {
-			RETURN_BUFFED(s->md.goaway.err);
-		}
-		else if (!strcmp(spec, "laststream")) {
-			RETURN_BUFFED(s->md.goaway.stream);
-		}
-		else if (!strcmp(spec, "debug")) {
-			return (s->md.goaway.debug);
-		}
-	} /* GENERIC FRAME */
-	else if (!strncmp(spec, "frame.", 6)) {
-		spec += 6;
-		     if (!strcmp(spec, "data"))   { return (f->data); }
-		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
-		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
-		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
-	}
-	else if (!strcmp(spec, "req.bodylen")) {
-		RETURN_BUFFED(s->bodylen);
-	}
-	else if (!strcmp(spec, "resp.bodylen")) {
-		RETURN_BUFFED(s->bodylen);
-	}
-	else if (!strcmp(spec, "req.body")) {
-		return (s->body);
-	}
-	else if (!strcmp(spec, "resp.body")) {
-		return (s->body);
-	}
-	else if (!memcmp(spec, "req.http.", 9)) {
-		return (find_header(s, spec + 9, strlen(spec + 9)));
-	}
-	else if (!memcmp(spec, "resp.http.", 10)) {
-		return (find_header(s, spec + 10, strlen(spec + 10)));
-	}
-	else
-		return (spec);
-	return(NULL);
-}
-
 static void
 cmd_http_expect(CMD_ARGS)
 {
@@ -1438,32 +1422,53 @@ cmd_http_expect(CMD_ARGS)
 		    av[0], clhs, cmp, crhs, retval ? "match" : "failed");
 }
 
+static void
+cmd_fatal(CMD_ARGS)
+{
+	struct http2 *hp;
+	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
+
+	AZ(av[1]);
+	if (!strcmp(av[0], "fatal"))
+		hp->fatal = 0;
+	else if (!strcmp(av[0], "non-fatal"))
+		hp->fatal = -1;
+	else {
+		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
+	}
+}
 
 static const struct cmds stream_cmds[] = {
+	{ "expect",		cmd_http_expect },
 	{ "txframe",		cmd_txframe },
 	{ "rxframe",		cmd_rxframe },
-	{ "txping",		cmd_txping },
-	{ "rxping",		cmd_rxping },
-	{ "txwinup",		cmd_txwinup },
-	{ "rxwinup",		cmd_rxwinup },
-	{ "txrst",		cmd_txrst },
-	{ "rxrst",		cmd_rxrst },
-	{ "txgoaway",		cmd_txgoaway },
-	{ "rxgoaway",		cmd_rxgoaway },
-	{ "txsettings",		cmd_txsettings },
-	{ "rxsettings",		cmd_rxsettings },
+	{ "txdata",		cmd_txdata },
+	{ "rxdata",		cmd_rxdata },
+	{ "rxhdrs",		cmd_rxhdrs },
 	{ "txreq",		cmd_tx11obj },
 	{ "rxreq",		cmd_rxreqsp },
 	{ "txresp",		cmd_tx11obj },
 	{ "rxresp",		cmd_rxreqsp },
-	{ "rxhdrs",		cmd_rxhdrs },
-	{ "rxcont",		cmd_rxcont },
-	{ "txdata",		cmd_txdata },
-	{ "rxdata",		cmd_rxdata },
+	//priority
+	{ "txrst",		cmd_txrst },
+	{ "rxrst",		cmd_rxrst },
+	{ "txsettings",		cmd_txsettings },
+	{ "rxsettings",		cmd_rxsettings },
+	//push
+	{ "txping",		cmd_txping },
+	{ "rxping",		cmd_rxping },
+	{ "txgoaway",		cmd_txgoaway },
+	{ "rxgoaway",		cmd_rxgoaway },
+	{ "txwinup",		cmd_txwinup },
+	{ "rxwinup",		cmd_rxwinup },
 	{ "txcont",		cmd_tx11obj },
-	{ "expect",		cmd_http_expect },
+	{ "rxcont",		cmd_rxcont },
 	{ "delay",		cmd_delay },
 	{ "sema",		cmd_sema },
+	//timeout
+	//expect_close
+	//close
+	//accept
 	{ "fatal",		cmd_fatal },
 	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
