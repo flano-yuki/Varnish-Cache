@@ -89,19 +89,16 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 			return (HdrErr);
 		txtcpy(&header->key, t);
 	} else {
-		if (!str_decode(iter, &header->key))
+		if (HdrMore != str_decode(iter, &header->key))
 			return (HdrErr);
 	}
 
-	if (!str_decode(iter, &header->value))
+	if (HdrErr == str_decode(iter, &header->value))
 		return (HdrErr);
 
 	if (must_index)
 		push_header(iter->ctx, header);
-	if (iter->buf < iter->end)
-		return (HdrMore);
-	else
-		return (HdrDone);
+	return (ITER_DONE(iter));
 }
 
 enum HdrRet

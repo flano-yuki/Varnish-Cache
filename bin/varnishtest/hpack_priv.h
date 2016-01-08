@@ -1,4 +1,7 @@
 #include "vqueue.h"
+
+#define ITER_DONE(iter) (iter->buf == iter->end ? HdrDone : HdrMore)
+
 struct dynhdr {
 	struct hdrng header;
 	VTAILQ_ENTRY(dynhdr)      list;
@@ -48,5 +51,5 @@ hpack_simulate(char *str, int huff);
 
 enum HdrRet
 str_encode(struct HdrIter *iter, char *str, int huff);
-int
+enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t);

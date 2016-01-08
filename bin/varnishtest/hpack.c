@@ -141,11 +141,11 @@ str_encode(struct HdrIter *iter, char *str, int huff) {
 	} else {
 		memcpy(iter->buf, str, slen);
 		iter->buf += slen;
-		return (iter->buf == iter->end ? HdrDone : HdrMore);
+		return (ITER_DONE(iter));
 	}
 }
 
-int
+enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t) {
 	char str[512] = {0};
 	uint64_t num;
@@ -153,9 +153,9 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 	assert(iter->buf < iter->end);
 	huff = (*iter->buf & 0x80);
 	if (HdrMore != num_decode(&num, iter, 7))
-		return (0);
+		return (HdrErr);
 	if (num > iter->end - iter->buf)
-		return (0);
+		return (HdrErr);
 	if (huff) { /*Huffman encoding */
 		ndec = hpack_decode(str, 512, iter, num);
 		if (!ndec)
@@ -167,6 +167,7 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 		memcpy(t->ptr, str, ndec);
 		t->ptr[ndec] = '\0';
 		t->size = ndec;
+		iter->buf += ndec;
 	} else { /* literal string */
 		t->huff = 0;
 		t->ptr = malloc(num + 1);
@@ -174,10 +175,10 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 		memcpy(t->ptr, iter->buf, num);
 		t->ptr[num] = '\0';
 		t->size = num;
+		iter->buf += num;
 	}
-	iter->buf += num;
 	
-	return (1);
+	return (ITER_DONE(iter));
 }
 
 enum HdrRet
@@ -190,8 +191,10 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 
 	*result = 0;
 	*result = *iter->buf & (0xff >> (8-prefix));
-	if (*result < (1 << prefix) - 1)
-		return (++iter->buf == iter->end ? HdrDone : HdrMore);
+	if (*result < (1 << prefix) - 1) {
+		iter->buf++;
+		return (ITER_DONE(iter));
+	}
 
 	do {
 		iter->buf++;
@@ -206,7 +209,7 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 	} while (*iter->buf & 0x80);
 	iter->buf++;
 
-	return (iter->buf == iter->end ? HdrDone : HdrMore);
+	return (ITER_DONE(iter));
 }
 
 enum HdrRet
@@ -220,7 +223,7 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
 	*iter->buf &= 0xff << prefix;
 	if (num <=  pmax) {
 		*iter->buf++ |= num;
-		return (iter->buf == iter->end ? HdrDone : HdrMore);
+		return (ITER_DONE(iter));
 	} else if (iter->end - iter->buf < 2)
 		return (HdrErr);
 
@@ -235,7 +238,7 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
 		num /= 128;
 	} while (num);
 	*iter->buf++ &= 127;
-	return (iter->buf == iter->end ? HdrDone : HdrMore);
+	return (ITER_DONE(iter));
 }
 
 uint8_t
