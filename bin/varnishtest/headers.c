@@ -11,9 +11,9 @@
 static inline void
 txtcpy(struct txt *to, struct txt *from) {
 	//AZ(to->ptr);
-	to->ptr = malloc(from->size);
+	to->ptr = malloc(from->size + 1);
 	AN(to->ptr);
-	memcpy(to->ptr, from->ptr, from->size);
+	memcpy(to->ptr, from->ptr, from->size + 1);
 	to->size = from->size;
 }
 
@@ -110,7 +110,7 @@ encNextHdr(struct HdrIter *iter, struct hdrng *h) {
 		case HdrIdx:
 			*iter->buf = 0x80;
 			num_encode(iter, 7, h->i);
-			return (HdrErr);
+			return (ITER_DONE(iter));
 		case HdrInc:
 			*iter->buf = 0x40;
 			pref = 6;
@@ -125,17 +125,17 @@ encNextHdr(struct HdrIter *iter, struct hdrng *h) {
 			pref = 4;
 			break;
 		default:
-			assert(1);
+			INCOMPL();
 	}
 	if (h->i) {
 		if (HdrMore != num_encode(iter, pref, h->i))
 			return (HdrErr);
 	} else {
 		iter->buf++;
-		if (HdrMore != str_encode(iter, h->key.ptr, h->key.huff))
+		if (HdrMore != str_encode(iter, &h->key))
 			return (HdrErr);
 	}
-	ret = str_encode(iter, h->value.ptr, h->value.huff);
+	ret = str_encode(iter, &h->value);
 	if (ret == HdrErr)
 		return (HdrErr);
 	if (must_index)

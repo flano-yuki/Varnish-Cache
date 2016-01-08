@@ -23,13 +23,13 @@ static struct symbol coding_table[] = {
 
 struct symbol *EOS = &coding_table[256];
 
-int
+static int
 hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
 	int cursor = 0;
+	int len = 0;
 	size *= 8;
 	int prefix;
 	int idx = 0;
-	//struct array_desc *entry;
 	char nent;
 	struct pair *p;
 	while(cursor < size && nm--) {
@@ -37,22 +37,27 @@ hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
 		while (cursor < size) {
 			if (!((iter->buf[cursor/8] >> (7 - (cursor%8))) & 1))
 				break;
-			prefix++;
+			if (++prefix >= 30)
+				return (0);
 			cursor++;
 		}
-		if (prefix >= 30)
-			return (0);
 		if (cursor == size) {
 			/* check that last bit is 1 */
-			if (iter->buf[(cursor-1)/8] & 1)
-				return (cursor/8);
-			else
+			if (iter->buf[(cursor-1)/8] & 1) {
+				iter->buf += (cursor + 7)/8;
+				return (len);
+			} else
 				return (0);
 		}
 		idx = 0;
 		nent = decoding_table.desc[prefix].nentries;
 		p = &decoding_table.pairs[decoding_table.desc[prefix].offset];
+		AN(nent);
 		do {
+			/* set the first bit of prefix to 1, and keep
+			 * gobbling bits until we find it in the table
+			 * this allows to not mess up because of the leading 0s
+			 */
 			if (idx)
 				idx = idx * 2 + ((iter->buf[cursor/8] >> (7 - (cursor%8))) & 1);
 			else
@@ -64,37 +69,40 @@ hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
 			}
 			if (p->suffix == idx) { /* found it! */
 				*str++ = p->sym;
+				len++;
 				break;
 			} else if (!nent) /* We went too far, Marty! */
 				return (0);
 		} while (cursor < size);
 	}
-	assert(cursor = size + 1);
-	return (cursor/8);
+	iter->buf += (cursor + 7)/8;
+	return (len);
 }
 
-int
-hpack_encode(struct HdrIter *iter, char *str) {
-	short r, size;
+static int
+hpack_encode(struct HdrIter *iter, char *str, int size) {
+	short r, s;
 	int v;
 	int l = 0;
 	char *b;
 	int cursor = 0;
-	while (*str != '\0') {
+	while (size--) {
 		v = coding_table[(unsigned char)*str].val;
 		r = coding_table[(unsigned char)*str].size;
 
 		while (r > 0) {
 			b = iter->buf + (cursor / 8);
-			size = 8 - (cursor % 8);
+			if (b >= iter->end)
+				return (1);
+			s = 8 - (cursor % 8);
 			if (!(cursor%8))
 				*b = 0;
-			if (r >= size) {
-				*b |= (0xff >> (7 - size)) & (v >> (r - size));
-				r -= size;
-				cursor += size;
+			if (r >= s) {
+				*b |= (0xff >> (7 - s)) & (v >> (r - s));
+				r -= s;
+				cursor += s;
 			} else {
-				*b |= 0xff & (v<< (size - r));
+				*b |= 0xff & (v<< (s - r));
 				cursor += r;
 				r = 0;
 			}
@@ -109,12 +117,12 @@ hpack_encode(struct HdrIter *iter, char *str) {
 	return (0);
 }
 
-int
-hpack_simulate(char *str, int huff) {
+static int
+hpack_simulate(char *str, int size, int huff) {
 	int len = 0;
 	assert(str);
 	if (!huff)
-		return (strlen(str));
+		return (size);
 	do {
 		len += coding_table[(unsigned char)*str].size;	
 	} while (*(++str) != '\0');
@@ -122,10 +130,10 @@ hpack_simulate(char *str, int huff) {
 }
 
 enum HdrRet
-str_encode(struct HdrIter *iter, char *str, int huff) {
-	int slen = hpack_simulate(str, huff);
+str_encode(struct HdrIter *iter, struct txt *t) {
+	int slen = hpack_simulate(t->ptr, t->size, t->huff);
 	assert(iter->buf < iter->end);
-	if (huff)
+	if (t->huff)
 		*iter->buf = 0x80;
 	else
 		*iter->buf = 0;
@@ -136,10 +144,10 @@ str_encode(struct HdrIter *iter, char *str, int huff) {
 	if (slen > iter->end - iter->buf)
 		return (HdrErr);
 
-	if (huff) {
-		return (hpack_encode(iter, str));
+	if (t->huff) {
+		return (hpack_encode(iter, t->ptr, t->size));
 	} else {
-		memcpy(iter->buf, str, slen);
+		memcpy(iter->buf, t->ptr, slen);
 		iter->buf += slen;
 		return (ITER_DONE(iter));
 	}
@@ -147,9 +155,8 @@ str_encode(struct HdrIter *iter, char *str, int huff) {
 
 enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t) {
-	char str[512] = {0};
 	uint64_t num;
-	int huff, ndec;
+	int huff;
 	assert(iter->buf < iter->end);
 	huff = (*iter->buf & 0x80);
 	if (HdrMore != num_decode(&num, iter, 7))
@@ -157,26 +164,28 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 	if (num > iter->end - iter->buf)
 		return (HdrErr);
 	if (huff) { /*Huffman encoding */
-		ndec = hpack_decode(str, 512, iter, num);
-		if (!ndec)
-			return (0);
-		assert(ndec <= num);
-		t->huff = 1;
-		t->ptr = malloc(ndec + 1);
+		t->ptr = malloc((num * 8) / 5 + 1);
 		AN(t->ptr);
-		memcpy(t->ptr, str, ndec);
-		t->ptr[ndec] = '\0';
-		t->size = ndec;
-		iter->buf += ndec;
+		num = hpack_decode(t->ptr, (num * 8) / 5, iter, num);
+		if (!num) {
+			free(t->ptr);
+			return (HdrErr);
+		}
+		t->huff = 1;
+		/* XXX: do we care? */
+		t->ptr = realloc(t->ptr, num + 1);
+		AN(t->ptr);
+		memcpy(t->ptr, t->ptr, num);
 	} else { /* literal string */
 		t->huff = 0;
 		t->ptr = malloc(num + 1);
 		AN(t->ptr);
 		memcpy(t->ptr, iter->buf, num);
-		t->ptr[num] = '\0';
-		t->size = num;
 		iter->buf += num;
 	}
+
+	t->ptr[num] = '\0';
+	t->size = num;
 	
 	return (ITER_DONE(iter));
 }

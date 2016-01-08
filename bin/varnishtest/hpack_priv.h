@@ -23,13 +23,6 @@ struct HdrIter {
 	char *end;
 };
 
-int
-hpack_decode(char *str, int n, struct HdrIter *iter, int size);
-
-int
-hpack_encode(struct HdrIter *iter, char *str);
-
-
 enum HdrRet
 num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix);
 
@@ -46,10 +39,8 @@ void push_header (struct stm_ctx *ctx, const struct hdrng *h);
 
 uint8_t                                                                                                                                                                                                            
 num_simulate(uint8_t prefix, uint64_t num);
-int
-hpack_simulate(char *str, int huff);
 
 enum HdrRet
-str_encode(struct HdrIter *iter, char *str, int huff);
+str_encode(struct HdrIter *iter, struct txt *t);
 enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t);

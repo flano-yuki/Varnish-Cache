@@ -55,8 +55,9 @@ pop_header(struct stm_ctx *ctx) {
 
 void
 push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
-	assert(ctx->maxsize);
 	assert(ctx->size <= ctx->maxsize);
+	if (!ctx->maxsize)
+		return;
 	assert(oh);
 	//assert(oh->name);
 	//assert(oh->value);
@@ -69,13 +70,13 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 	if (ctx->maxsize - ctx->size >= size) {
 
 		h->header.key.size = oh->key.size;
-		h->header.key.ptr = malloc(oh->key.size);
+		h->header.key.ptr = malloc(oh->key.size + 1);
 		AN(h->header.key.ptr);
-		memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size);
+		memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size + 1);
 		h->header.value.size = oh->value.size;
-		h->header.value.ptr = malloc(oh->value.size);
+		h->header.value.ptr = malloc(oh->value.size + 1);
 		AN(h->header.value.ptr);
-		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.size);
+		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.size + 1);
 		VTAILQ_INSERT_HEAD(&ctx->dyntbl, h, list);
 		ctx->size += size;
 	}
