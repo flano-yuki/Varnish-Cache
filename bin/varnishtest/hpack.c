@@ -19,7 +19,7 @@ static struct symbol coding_table[] = {
 	{0, 0}
 };
 
-#include "tiptopdec.h"
+#include "vtc_h2_dectbl.h"
 
 struct symbol *EOS = &coding_table[256];
 

@@ -21,7 +21,7 @@ struct hdrng sttbl[] = {
 		.size = sizeof(v) - 1 \
 	}, \
 },
-#include "sttbl.h"
+#include "vtc_h2_stattbl.c"
 #undef STAT_HDRS
 };
 
