@@ -136,7 +136,7 @@ struct stream {
 	pthread_t		tp;
 	unsigned		reading;
 	struct http2		*hp;
-	long		ws;
+	uint64_t		ws;
 	int			ftype;
 	union {
 		struct {
@@ -179,6 +179,7 @@ struct http2 {
 	pthread_mutex_t		mtx;
 	pthread_cond_t          cond;
 	struct stm_ctx		*h2ctx;
+	uint64_t		ws;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -546,6 +547,15 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
 		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
 	}
+	else if (!strcmp(spec, "stream.window")) {
+		if (s->id) {
+			snprintf(buf, 20, "%ld", s->ws);
+			return (buf);
+		} else {
+			snprintf(buf, 20, "%ld", s->hp->ws);
+			return (buf);
+		}
+	}
 	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
 	}
@@ -706,6 +716,13 @@ grab_data(struct stream *s, struct vtclog *vl) {
 		vtc_log(vl, 3, "s%lu - no data", s->id);
 		return (1);
 	}
+
+	AZ(pthread_mutex_lock(&s->hp->mtx));
+	if (s->id)
+		s->ws -= f->size;
+	else
+		s->hp->ws -= f->size;
+	AZ(pthread_mutex_unlock(&s->hp->mtx));
 
 	if (s->body) {
 		s->body = realloc(s->body, s->bodylen + f->size + 1);
@@ -1382,6 +1399,8 @@ cmd_txwinup(CMD_ARGS)
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
 	AN(av[1]);
+	AN(av[2]);
+
 	INIT_FRAME(f, WINUP, 4, s->id, 0);
 
 	while (*++av) {
@@ -1397,6 +1416,14 @@ cmd_txwinup(CMD_ARGS)
 	}
 	if (*av != NULL)
 		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
+
+
+	AZ(pthread_mutex_lock(&hp->mtx));
+	if (s->id == 0)
+		s->hp->ws += size;
+	else
+		s->ws += size;
+	AZ(pthread_mutex_unlock(&hp->mtx));
 
 	size = htonl(size);
 	f.data = (void *)&size;
