@@ -435,7 +435,7 @@ receive_frame(void *priv) {
 }
 
 #define CHECK_LAST_FRAME(TYPE) \
-	if (s->ftype != TYPE_ ## TYPE) { \
+	if (!s->frame || s->ftype != TYPE_ ## TYPE) { \
 		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
 	}
 
@@ -470,8 +470,6 @@ static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
 	struct frame *f = s->frame;
-	if (!f)
-		vtc_log(s->hp->vl, 0, "No frame received yet.");
 	AN(buf);
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
@@ -542,6 +540,10 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	} /* GENERIC FRAME */
 	else if (!strncmp(spec, "frame.", 6)) {
 		spec += 6;
+		if (!f) {
+			vtc_log(s->hp->vl, 0, "No frame received yet.");
+			return (NULL);
+		}
 		     if (!strcmp(spec, "data"))   { return (f->data); }
 		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
 		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
@@ -720,8 +722,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	AZ(pthread_mutex_lock(&s->hp->mtx));
 	if (s->id)
 		s->ws -= f->size;
-	else
-		s->hp->ws -= f->size;
+	s->hp->ws -= f->size;
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
 
 	if (s->body) {
@@ -1421,8 +1422,7 @@ cmd_txwinup(CMD_ARGS)
 	AZ(pthread_mutex_lock(&hp->mtx));
 	if (s->id == 0)
 		s->hp->ws += size;
-	else
-		s->ws += size;
+	s->ws += size;
 	AZ(pthread_mutex_unlock(&hp->mtx));
 
 	size = htonl(size);
@@ -1799,6 +1799,7 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	hp->timeout = vtc_maxdur * 1000 / 2;
 	hp->sfd = sfd;
 	hp->vl = vl;
+	hp->ws = 0xffff;
 
 	hp->running = 1;
 	if (sfd) {
