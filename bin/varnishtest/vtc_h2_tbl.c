@@ -92,9 +92,7 @@ resizeTable(struct stm_ctx *ctx, uint64_t num) {
 }
 
 struct txt *
-tbl_get_name(struct HdrIter *iter, uint64_t index) {
-	assert(iter);
-	struct stm_ctx *ctx = iter->ctx;
+tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
@@ -113,9 +111,7 @@ tbl_get_name(struct HdrIter *iter, uint64_t index) {
 }
 
 struct txt *
-tbl_get_value(struct HdrIter *iter, uint64_t index) {
-	assert(iter);
-	struct stm_ctx *ctx = iter->ctx;
+tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
