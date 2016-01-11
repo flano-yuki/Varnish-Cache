@@ -1759,7 +1759,8 @@ static const struct cmds http2_cmds[] = {
 };
 
 int
-http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
+http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
+		unsigned nosettings)
 {
 	struct stream *s;
 	struct http2 *hp;
@@ -1783,6 +1784,17 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd)
 	}
 	hp->h2ctx = initStmCtx(0);
 	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
+
+	if (!nosettings) {
+			vtc_log(vl, 3, "============parsing extra stuff");
+		parse_string("stream 0 {\n"
+				"txsettings\n"
+				"rxsettings\n"
+				"txsettings -ack\n"
+				"rxsettings\n"
+				"expect settings.ack == true"
+			     "} -run\n", http2_cmds, hp, vl);
+	}
 
 	parse_string(spec, http2_cmds, hp, vl);
 

@@ -54,6 +54,8 @@ struct client {
 	unsigned		repeat;
 
 	unsigned		running;
+
+	unsigned		nosettings;
 	pthread_t		tp;
 };
 
@@ -101,7 +103,7 @@ client_thread(void *priv)
 		VTCP_myname(fd, mabuf, sizeof mabuf, mpbuf, sizeof mpbuf);
 		vtc_log(vl, 3, "connected fd %d from %s %s to %s",
 		    fd, mabuf, mpbuf, VSB_data(vsb));
-		fd = http2_process(vl, c->spec, fd, NULL);
+		fd = http2_process(vl, c->spec, fd, NULL, c->nosettings);
 		vtc_log(vl, 3, "closing fd %d", fd);
 		VTCP_close(&fd);
 	}
@@ -250,6 +252,10 @@ cmd_h2client(CMD_ARGS)
 		if (!strcmp(*av, "-repeat")) {
 			c->repeat = atoi(av[1]);
 			av++;
+			continue;
+		}
+		if (!strcmp(*av, "-nosettings")) {
+			c->nosettings = 1;
 			continue;
 		}
 		if (!strcmp(*av, "-start")) {

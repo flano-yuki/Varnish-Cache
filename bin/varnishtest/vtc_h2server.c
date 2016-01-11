@@ -59,6 +59,7 @@ struct server {
 	char			aaddr[32];
 	char			aport[32];
 
+	unsigned		nosettings;
 	pthread_t		tp;
 };
 
@@ -169,7 +170,7 @@ server_thread(void *priv)
 		if (fd < 0)
 			vtc_log(vl, 0, "Accepted failed: %s", strerror(errno));
 		vtc_log(vl, 3, "accepted fd %d", fd);
-		fd = http2_process(vl, s->spec, fd, &s->sock);
+		fd = http2_process(vl, s->spec, fd, &s->sock, s->nosettings);
 		vtc_log(vl, 3, "shutting fd %d", fd);
 		j = shutdown(fd, SHUT_WR);
 		if (!VTCP_Check(j))
@@ -385,6 +386,10 @@ cmd_h2server(CMD_ARGS)
 		if (!strcmp(*av, "-repeat")) {
 			s->repeat = atoi(av[1]);
 			av++;
+			continue;
+		}
+		if (!strcmp(*av, "-nosettings")) {
+			s->nosettings = 1;
 			continue;
 		}
 		if (!strcmp(*av, "-listen")) {
