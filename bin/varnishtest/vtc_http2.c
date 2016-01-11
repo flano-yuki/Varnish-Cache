@@ -131,6 +131,7 @@ struct stream {
 	VTAILQ_ENTRY(stream)    list;
 	unsigned		running;
 	pthread_cond_t          cond;
+	pthread_cond_t          done;
 	struct frame		*frame;
 	pthread_t		tp;
 	unsigned		reading;
@@ -392,7 +393,7 @@ receive_frame(void *priv) {
 		if (f->type <= TYPE_MAX)
 			type = h2_types[f->type];
 		else
-			type = "?";
+			type = "UNKNOWN";
 		vtc_log(hp->vl, 3, "rx: stream: %d, type: %s (%d), "
 				"flags: 0x%02x, size: %d",
 				f->stid, type, f->type, f->flags, f->size);
@@ -416,6 +417,7 @@ receive_frame(void *priv) {
 				s->frame = f;
 				f = NULL;
 				AZ(pthread_cond_signal(&s->cond));
+				AZ(pthread_cond_wait(&s->done, &hp->mtx));
 				break;
 			}
 			if (f)
@@ -621,6 +623,7 @@ cmd_rxframe(CMD_ARGS)
 	struct stream *s;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
+	AZ(pthread_cond_signal(&s->done));
 }
 
 static void
@@ -642,8 +645,10 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 	int r;
 	struct HdrIter *iter;
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return (0);
+	}
 
 	assert(type == TYPE_HEADERS || type == TYPE_CONT);
 
@@ -663,6 +668,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 		if (r == HdrDone)
 			break;
 	}
+	AZ(pthread_cond_signal(&s->done));
 	//XXX document too many headers errors
 	if (r != HdrDone)
 		vtc_log(vl, s->hp->fatal, "Header decoding failed");
@@ -675,8 +681,10 @@ static int
 grab_data(struct stream *s, struct vtclog *vl) {
 	struct frame *f;
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return (0);
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_DATA)
@@ -699,6 +707,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	s->body[s->bodylen] = '\0';
 
 	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, f->data, s->body);
+	AZ(pthread_cond_signal(&s->done));
 	return (1);
 }
 
@@ -967,8 +976,10 @@ cmd_rxrst(CMD_ARGS)
 	char *buf;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return;
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_RST)
@@ -984,6 +995,7 @@ cmd_rxrst(CMD_ARGS)
 	else
 		buf = "unknown";
 	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+	AZ(pthread_cond_signal(&s->done));
 }
 
 #define PUT_KV(name, code) \
@@ -1060,8 +1072,10 @@ cmd_rxsettings(CMD_ARGS)
 	struct frame *f;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return;
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_SETTINGS)
@@ -1086,6 +1100,7 @@ cmd_rxsettings(CMD_ARGS)
 
 		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 	}
+	AZ(pthread_cond_signal(&s->done));
 }
 
 /*
@@ -1137,8 +1152,10 @@ cmd_rxping(CMD_ARGS)
 	struct frame *f;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return;
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_PING)
@@ -1151,6 +1168,7 @@ cmd_rxping(CMD_ARGS)
 	s->md.ping.data[8] = '\0';
 
 	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
+	AZ(pthread_cond_signal(&s->done));
 }
 
 
@@ -1227,8 +1245,10 @@ cmd_rxgoaway(CMD_ARGS)
 
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return;
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_GOAWAY)
@@ -1260,6 +1280,7 @@ cmd_rxgoaway(CMD_ARGS)
 	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
 	if (s->md.goaway.debug)
 		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
+	AZ(pthread_cond_signal(&s->done));
 }
 static void
 cmd_txwinup(CMD_ARGS)
@@ -1309,8 +1330,10 @@ cmd_rxwinup(CMD_ARGS)
 	uint32_t size;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	if (!s->frame)
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
 		return;
+	}
 	f = s->frame;
 
 	if (f->type != TYPE_WINUP)
@@ -1324,6 +1347,7 @@ cmd_rxwinup(CMD_ARGS)
 	s->md.winup_size = size;
 
 	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
+	AZ(pthread_cond_signal(&s->done));
 }
 
 static void
@@ -1501,6 +1525,7 @@ stream_new(const char *name, struct http2 *h)
 	ALLOC_OBJ(s, STREAM_MAGIC);
 	AN(s);
 	pthread_cond_init(&s->cond, NULL);
+	pthread_cond_init(&s->done, NULL);
 	REPLACE(s->name, name);
 	s->ws = 0xffff;
 
