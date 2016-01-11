@@ -80,7 +80,8 @@ void init_sema(void);
 void init_server(void);
 
 int http_process(struct vtclog *vl, const char *spec, int sock, int *sfd);
-int http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd);
+int http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
+		unsigned nosettings);
 
 void cmd_server_genvcl(struct vsb *vsb);
 
