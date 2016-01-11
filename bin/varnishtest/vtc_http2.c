@@ -1374,13 +1374,14 @@ cmd_txwinup(CMD_ARGS)
 	char *p;
 	struct frame f;
 	char buf[8];
-	uint32_t size = 0x7fffffff; 
+	uint32_t size = 0; 
 	f.data = buf;
 	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
+	AN(av[1]);
 	INIT_FRAME(f, WINUP, 4, s->id, 0);
 
 	while (*++av) {
@@ -1396,10 +1397,6 @@ cmd_txwinup(CMD_ARGS)
 	}
 	if (*av != NULL)
 		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
-	if (0x7fffffff - s->ws < size)
-		s->ws = size;
-	else
-		s->ws += size;
 
 	size = htonl(size);
 	f.data = (void *)&size;
