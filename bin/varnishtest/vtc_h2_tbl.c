@@ -6,7 +6,7 @@
 #include <vas.h>
 
 #include "hpack.h"
-#include "hpack_priv.h"
+#include "vtc_h2_priv.h"
 
 struct hdrng sttbl[] = {
 	{{NULL, 0}, {NULL, 0}, HdrIdx, 0},

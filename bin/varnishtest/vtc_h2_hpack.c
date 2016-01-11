@@ -5,7 +5,7 @@
 #include <vas.h>
 
 #include "hpack.h"
-#include "hpack_priv.h"
+#include "vtc_h2_priv.h"
 
 struct symbol {
 	int val;
