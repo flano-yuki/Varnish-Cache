@@ -148,6 +148,10 @@ struct stream {
 			uint32_t stream;
 			char	 *debug;
 		}		goaway;
+		struct {
+			uint32_t stream;
+			uint8_t  weight;
+		}		prio;
 		uint32_t	winup_size;
 		uint32_t	rst_err;
 		double settings[SETTINGS_MAX+1];
@@ -483,6 +487,14 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	else if (!strcmp(spec, "winup.size")) {
 		CHECK_LAST_FRAME(WINUP);
 		RETURN_BUFFED(s->md.winup_size);
+	}
+	else if (!strcmp(spec, "prio.stream")) {
+		CHECK_LAST_FRAME(PRIORITY);
+		RETURN_BUFFED(s->md.prio.stream);
+	}
+	else if (!strcmp(spec, "prio.weight")) {
+		CHECK_LAST_FRAME(PRIORITY);
+		RETURN_BUFFED(s->md.prio.weight);
 	}
 	else if (!strcmp(spec, "rst.err")) {
 		CHECK_LAST_FRAME(RST);
@@ -923,7 +935,6 @@ cmd_rxhdrs(CMD_ARGS)
 	}
 }
 
-
 static void
 cmd_txrst(CMD_ARGS)
 {
@@ -966,7 +977,6 @@ cmd_txrst(CMD_ARGS)
 	write_frame(hp, &f, 4, "txrst");
 }
 
-
 static void
 cmd_rxrst(CMD_ARGS)
 {
@@ -995,6 +1005,80 @@ cmd_rxrst(CMD_ARGS)
 	else
 		buf = "unknown";
 	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+	AZ(pthread_cond_signal(&s->done));
+}
+
+static void
+cmd_txprio(CMD_ARGS)
+{
+	struct http2 *hp;
+	struct stream *s;
+	char *p;
+	uint32_t stid = 0;
+	struct frame f;
+	uint32_t weight = 0;
+	char buf[5];
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	hp = s->hp;
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+
+	INIT_FRAME(f, PRIORITY, 5, s->id, 0);
+	f.data = (void *)buf;
+
+	while (*++av) {
+		if (!strcmp(*av, "-stream")) {
+			av++;
+			stid = strtoul(*av, &p, 0);
+			if (*p != '\0' || stid >= (1 << 31)) {
+				vtc_log(hp->vl, 0, "Stream id must be a 32-bits integer "
+						"(found %s)", *av);
+			}
+		} else if (!strcmp(*av, "-weight")) {
+			av++;
+			weight = strtoul(*av, &p, 0);
+			if (*p != '\0' || weight >= 256) {
+				vtc_log(hp->vl, 0, "Weight must be a 8-bits integer "
+						"(found %s)", *av);
+			}
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(hp->vl, 0, "Unknown txprio spec: %s\n", *av);
+
+	*(uint32_t *)buf = htonl(stid);
+	buf[4] = weight & 0xff;
+	write_frame(hp, &f, 4, "txprio");
+}
+
+static void
+cmd_rxprio(CMD_ARGS)
+{
+	struct frame *f;
+	struct stream *s;
+	char *buf;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	wait_frame(s);
+	if (!s->frame) {
+		AZ(pthread_cond_signal(&s->done));
+		return;
+	}
+	f = s->frame;
+
+	if (f->type != TYPE_PRIORITY)
+		vtc_log(vl, 0, "Received something that is not a priority (type=0x%x)", f->type);
+	if (f->size != 5)
+		vtc_log(vl, 0, "Size should be 5, but isn't (%d)", f->size);
+
+	buf = s->frame->data;
+	AN(buf);
+
+	s->md.prio.stream = ntohl(*(uint32_t*)f->data);
+	buf += 4;
+	s->md.prio.weight = *buf;
+
+	vtc_log(vl, 3, "s%lu - prio->stream: %u", s->id, s->md.prio.stream);
+	vtc_log(vl, 3, "s%lu - prio->weight: %u", s->id, s->md.prio.weight);
 	AZ(pthread_cond_signal(&s->done));
 }
 
@@ -1474,6 +1558,8 @@ static const struct cmds stream_cmds[] = {
 	{ "txresp",		cmd_tx11obj },
 	{ "rxresp",		cmd_rxreqsp },
 	//priority
+	{ "txprio",		cmd_txprio },
+	{ "rxprio",		cmd_rxprio },
 	{ "txrst",		cmd_txrst },
 	{ "rxrst",		cmd_rxrst },
 	{ "txsettings",		cmd_txsettings },
