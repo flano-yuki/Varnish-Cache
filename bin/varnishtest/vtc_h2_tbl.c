@@ -76,7 +76,7 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 		pop_header(ctx);
 	if (ctx->maxsize - ctx->size >= size) {
 
-		if (h->header.key.ptr) {
+		if (oh->key.ptr) {
 			h->header.key.size = oh->key.size;
 			h->header.key.ptr = malloc(oh->key.size + 1);
 			AN(h->header.key.ptr);
