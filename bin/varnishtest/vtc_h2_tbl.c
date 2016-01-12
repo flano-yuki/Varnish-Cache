@@ -55,13 +55,20 @@ pop_header(struct stm_ctx *ctx) {
 
 void
 push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
+	const struct hdrng *ih;
 	assert(ctx->size <= ctx->maxsize);
+	assert(oh);
 	if (!ctx->maxsize)
 		return;
-	assert(oh);
-	//assert(oh->name);
-	//assert(oh->value);
-	int size = oh->key.size + oh->value.size + 32;
+	int size = oh->value.size + 32;
+	if (oh->key.ptr)
+		size += oh->key.size;
+	else {
+		AN(oh->i);
+		ih = getHeader(ctx, oh->i);
+		AN(ih);
+		size += ih->key.size;
+	}
 
 	struct dynhdr *h = malloc(sizeof(*h));
 
@@ -69,14 +76,28 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 		pop_header(ctx);
 	if (ctx->maxsize - ctx->size >= size) {
 
-		h->header.key.size = oh->key.size;
-		h->header.key.ptr = malloc(oh->key.size + 1);
-		AN(h->header.key.ptr);
-		memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size + 1);
+		if (h->header.key.ptr) {
+			h->header.key.size = oh->key.size;
+			h->header.key.ptr = malloc(oh->key.size + 1);
+			AN(h->header.key.ptr);
+			memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size + 1);
+		} else {
+			AN(oh->i);
+			ih = getHeader(ctx, oh->i);
+			AN(ih);
+
+			h->header.key.size = ih->key.size;
+			h->header.key.ptr = malloc(ih->key.size + 1);
+			AN(h->header.key.ptr);
+			memcpy(h->header.key.ptr, ih->key.ptr, ih->key.size + 1);
+		}
+
+
 		h->header.value.size = oh->value.size;
 		h->header.value.ptr = malloc(oh->value.size + 1);
 		AN(h->header.value.ptr);
 		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.size + 1);
+
 		VTAILQ_INSERT_HEAD(&ctx->dyntbl, h, list);
 		ctx->size += size;
 	}
@@ -129,6 +150,31 @@ tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
 		return (NULL);
 
 }
+
+const struct hdrng *
+getHeader(struct stm_ctx *ctx, uint32_t index) {
+	struct dynhdr *dh;
+	assert(ctx);
+	if (index > 61 + ctx->size)
+		return (NULL);
+	else if (index <= 61)
+		return (&ctx->sttbl[index]);
+
+	index -= 62;
+	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
+		if (!index--)
+			break;
+	if (index && dh)
+		return (&dh->header);
+	else
+		return (NULL);
+}
+
+uint32_t
+getTblSize(struct stm_ctx *ctx) {
+	return ctx->size;
+}
+
 void
 dump_dyn_tbl(struct stm_ctx *ctx) {
 	int i = 0;

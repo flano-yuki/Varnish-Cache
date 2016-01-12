@@ -120,10 +120,10 @@ hpack_encode(struct HdrIter *iter, char *str, int size) {
 static int
 hpack_simulate(char *str, int size, int huff) {
 	int len = 0;
-	assert(str);
 	if (!huff)
 		return (size);
 	do {
+		assert(str);
 		len += coding_table[(unsigned char)*str].size;	
 	} while (*(++str) != '\0');
 	return ((len+7)/8);
@@ -269,8 +269,8 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 	struct txt *t;
 	uint64_t num;
 	int must_index = 0;
+	assert(iter);
 	assert(iter->buf < iter->end);
-
 	/* Indexed Header Field */
 	if (*iter->buf & 128) {
 		header->t = HdrIdx;
@@ -295,7 +295,7 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 				return (HdrMore);
 			else
 				return (HdrDone);
-		} else if (iter->buf == iter->end)
+		} else
 			return (HdrErr);
 
 	}

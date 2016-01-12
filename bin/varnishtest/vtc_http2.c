@@ -178,7 +178,8 @@ struct http2 {
 	VTAILQ_HEAD(, stream)   streams;
 	pthread_mutex_t		mtx;
 	pthread_cond_t          cond;
-	struct stm_ctx		*h2ctx;
+	struct stm_ctx		*outctx;
+	struct stm_ctx		*inctx;
 	uint64_t		ws;
 };
 
@@ -469,8 +470,13 @@ find_header(struct stream *s, char *k, int ks) {
 static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
+
+	uint32_t idx;
+	int n;
+	const struct hdrng *h;
 	struct frame *f = s->frame;
 	AN(buf);
+	n = 0;
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
 		return (s->md.ping.data);
@@ -557,6 +563,32 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			snprintf(buf, 20, "%ld", s->hp->ws);
 			return (buf);
 		}
+	}
+	else if (1 == sscanf(spec, "intable[%u].key%n", &idx, &n) &&
+			spec[n] == '\0') {
+		h = getHeader(s->hp->inctx, idx + 61);
+		return (h ? h->key.ptr : NULL);
+	}
+	else if (1 == sscanf(spec, "intable[%u].value%n", &idx, &n) &&
+			spec[n] == '\0') {
+		h = getHeader(s->hp->inctx, idx + 61);
+		return (h ? h->value.ptr : NULL);
+	}
+	else if (!strcmp(spec, "intable.size")) {
+		RETURN_BUFFED(getTblSize(s->hp->inctx));
+	}
+	else if (1 == sscanf(spec, "outtable[%u].key%n", &idx, &n) &&
+			spec[n] == '\0') {
+		h = getHeader(s->hp->outctx, idx + 61);
+		return (h ? h->key.ptr : NULL);
+	}
+	else if (1 == sscanf(spec, "outtable[%u].value%n", &idx, &n) &&
+			spec[n] == '\0') {
+		h = getHeader(s->hp->outctx, idx + 61);
+		return (h ? h->value.ptr : NULL);
+	}
+	else if (!strcmp(spec, "outtable.size")) {
+		RETURN_BUFFED(getTblSize(s->hp->outctx));
 	}
 	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
@@ -679,7 +711,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 	if (s->frame->type != type)
 		vtc_log(vl, 0, "Received something that is not a %s frame (type=0x%x)", type == 1 ? "header" : "continuation", s->frame->type);
 
-	iter = newHdrIter(s->hp->h2ctx, s->frame->data, s->frame->size);
+	iter = newHdrIter(s->hp->inctx, s->frame->data, s->frame->size);
 
 
 	while (s->nhdrs < MAX_HDR) {
@@ -765,11 +797,8 @@ cmd_tx11obj(CMD_ARGS)
 	/*XXX: do we need a better api? yes we do */
 	struct hdrng hdr;
 	char *cmd_str = *av;
+	char *p;
 
-	hdr.t = HdrNot;
-	hdr.i = 0;
-	hdr.key.huff = 0;
-	hdr.value.huff = 0;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
 	INIT_FRAME(f, CONT, 0, s->id, END_HEADERS);
@@ -785,8 +814,16 @@ cmd_tx11obj(CMD_ARGS)
 		}
 	}
 
-	iter = newHdrIter(s->hp->h2ctx, buf, 1024*2048);
+	iter = newHdrIter(s->hp->outctx, buf, 1024*2048);
 	while (*++av) {
+		hdr.t = HdrNot;
+		hdr.i = 0;
+		hdr.key.huff = 0;
+		hdr.key.ptr = NULL;
+		hdr.key.size = 0; 
+		hdr.value.huff = 0;
+		hdr.value.ptr = NULL;
+		hdr.value.size = 0;
 		if (!strcmp(*av, "-status") &&
 				!strcmp(cmd_str, "txresp")) {
 			ENC(hdr, ":status", av[1]);
@@ -805,6 +842,75 @@ cmd_tx11obj(CMD_ARGS)
 		} else if (!strcmp(*av, "-hdr")) {
 			ENC(hdr, av[1], av[2]);
 			av += 2;
+		} else if (!strcmp(*av, "-idxHdr")) {
+			AN(++av);
+			hdr.i = strtoul(*av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-idxHdr requires an integer arg (%s)", *av);
+			}
+			encNextHdr(iter, &hdr);
+		} else if (!strcmp(*av, "-litIdxHdr")) {
+			av++;
+			if (!strcmp(*av, "inc")) {
+				hdr.t = HdrInc;
+			} else if (!strcmp(*av, "not")) {
+				hdr.t = HdrNot;
+			} else if (!strcmp(*av, "never")) {
+				hdr.t = HdrNever;
+			} else
+				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
+			av++;
+			AN(*av);
+			hdr.i = strtoul(*av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "second -litidxHdr arg requires an integer arg (%s)", *av);
+			}
+			av++;
+			if (!strcmp(*av, "plain")) {
+			} else if (!strcmp(*av, "huf")) {
+				hdr.value.huff = 1;
+			} else
+				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+			av++;
+			AN(*av);
+			hdr.key.ptr = NULL;
+			hdr.key.size = 0;
+			hdr.value.ptr = *av;
+			hdr.value.size = strlen(*av);
+			encNextHdr(iter, &hdr);
+		} else if (!strcmp(*av, "-litHdr")) {
+			av++;
+			if (!strcmp(*av, "inc")) {
+				hdr.t = HdrInc;
+			} else if (!strcmp(*av, "not")) {
+				hdr.t = HdrNot;
+			} else if (!strcmp(*av, "never")) {
+				hdr.t = HdrNever;
+			} else
+				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
+
+			av++;
+			if (!strcmp(*av, "plain")) {
+			} else if (!strcmp(*av, "huf")) {
+				hdr.value.huff = 1;
+			} else
+				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+			av++;
+			AN(*av);
+			hdr.key.ptr = *av;
+			hdr.key.size = strlen(*av);
+
+			av++;
+			if (!strcmp(*av, "plain")) {
+			} else if (!strcmp(*av, "huf")) {
+				hdr.value.huff = 1;
+			} else
+				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+			av++;
+			AN(*av);
+			hdr.value.ptr = *av;
+			hdr.value.size = strlen(*av);
+			encNextHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
 			body = av[1];
@@ -820,6 +926,11 @@ cmd_tx11obj(CMD_ARGS)
 	}
 	if (*av != NULL)
 		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+
+	hdr.t = HdrNot;
+	hdr.i = 0;
+	hdr.key.huff = 0;
+	hdr.value.huff = 0;
 
 	if (!status_done) {
 		ENC(hdr, ":status", "200");
@@ -1513,6 +1624,7 @@ cmd_http_expect(CMD_ARGS)
 	AN(av[1]);
 	AN(av[2]);
 	AZ(av[3]);
+	AZ(pthread_mutex_lock(&s->hp->mtx));
 	lhs = cmd_var_resolve(s, av[0], buf);
 	cmp = av[1];
 	rhs = cmd_var_resolve(s, av[2], buf);
@@ -1552,6 +1664,7 @@ cmd_http_expect(CMD_ARGS)
 	else
 		vtc_log(hp->vl, retval ? 4 : 0, "EXPECT %s (%s) %s \"%s\" %s",
 		    av[0], clhs, cmp, crhs, retval ? "match" : "failed");
+	AZ(pthread_mutex_unlock(&s->hp->mtx));
 }
 
 static void
@@ -1807,7 +1920,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	} else  {
 		cmd_http_txpri(NULL, hp, NULL, vl);
 	}
-	hp->h2ctx = initStmCtx(0);
+	hp->inctx = initStmCtx(4096);
+	hp->outctx = initStmCtx(4096);
 	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
 
 	if (!nosettings) {
@@ -1835,7 +1949,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	AZ(pthread_mutex_unlock(&hp->mtx));
 
 	AZ(pthread_join(hp->tp, NULL));
-	destroyStmCtx(hp->h2ctx);
+	destroyStmCtx(hp->inctx);
+	destroyStmCtx(hp->outctx);
 
 	retval = hp->fd;
 	free(hp);
