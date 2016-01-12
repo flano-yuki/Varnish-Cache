@@ -316,6 +316,7 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 		pref = 4;
 	}
 	/* Dynamic Table Size Update */
+	/* XXX if under max allowed value */
 	else if (*iter->buf >> 5 == 1) {
 		if (HdrDone != num_decode(&num, iter, 5))
 			return (HdrErr);		
