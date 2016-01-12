@@ -925,7 +925,7 @@ cmd_tx11obj(CMD_ARGS)
 			break;
 	}
 	if (*av != NULL)
-		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+		vtc_log(s->hp->vl, 0, "Unknown %s spec: %s\n", cmd_str, *av);
 
 	hdr.t = HdrNot;
 	hdr.i = 0;
@@ -974,7 +974,7 @@ cmd_txdata(CMD_ARGS)
 			break;
 	}
 	if (*av != NULL)
-		vtc_log(s->hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+		vtc_log(s->hp->vl, 0, "Unknown txdata spec: %s\n", *av);
 
 	if (!body)
 		body = "";
@@ -1211,7 +1211,7 @@ cmd_rxprio(CMD_ARGS)
 	AZ(pthread_cond_signal(&s->done));
 }
 
-#define PUT_KV(name, code) \
+#define PUT_KV(name, val, code) \
 	av++;\
 	val = strtoul(*av, &p, 0);\
 	if (*p != '\0' || val > UINT32_MAX) {\
@@ -1258,11 +1258,13 @@ cmd_txsettings(CMD_ARGS)
 						*av);
 			cursor += sizeof(uint32_t);
 			f.size += 6;
-		} else if (!strcmp(*av, "-hdrtbl"))	{ PUT_KV(hdrtbl, 0x1)
-		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(maxstreams, 0x3)
-		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(winsize, 0x4)
-		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(framesize, 0x5)
-		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(hdrsize, 0x6)
+		} else if (!strcmp(*av, "-hdrtbl"))	{
+			PUT_KV(hdrtbl, val, 0x1);
+			resizeTable(s->hp->inctx, val);
+		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(maxstreams, val, 0x3)
+		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(winsize, val, 0x4)
+		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(framesize, val, 0x5)
+		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(hdrsize, val, 0x6)
 		} else if (!strcmp(*av, "-ack")) {
 			f.flags |= 1;
 		} else
@@ -1310,6 +1312,9 @@ cmd_rxsettings(CMD_ARGS)
 		} else
 			buf = "unknown";
 		i += 4;
+
+		if (t == 1 )
+			resizeTable(s->hp->outctx, v);
 
 		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 	}
@@ -1662,8 +1667,8 @@ cmd_http_expect(CMD_ARGS)
 		    "EXPECT %s (%s) %s %s (%s) test not implemented",
 		    av[0], clhs, av[1], av[2], crhs);
 	else
-		vtc_log(hp->vl, retval ? 4 : 0, "EXPECT %s (%s) %s \"%s\" %s",
-		    av[0], clhs, cmp, crhs, retval ? "match" : "failed");
+		vtc_log(hp->vl, retval ? 4 : 0, "(s%ld) EXPECT %s (%s) %s \"%s\" %s",
+		    s->id, av[0], clhs, cmp, crhs, retval ? "match" : "failed");
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
 }
 
