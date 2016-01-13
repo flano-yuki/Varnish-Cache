@@ -131,7 +131,6 @@ struct stream {
 	VTAILQ_ENTRY(stream)    list;
 	unsigned		running;
 	pthread_cond_t          cond;
-	pthread_cond_t          done;
 	struct frame		*frame;
 	pthread_t		tp;
 	unsigned		reading;
@@ -423,7 +422,7 @@ receive_frame(void *priv) {
 				s->frame = f;
 				f = NULL;
 				AZ(pthread_cond_signal(&s->cond));
-				AZ(pthread_cond_wait(&s->done, &hp->mtx));
+				AZ(pthread_cond_wait(&s->cond, &hp->mtx));
 				break;
 			}
 			if (f)
@@ -679,7 +678,7 @@ cmd_rxframe(CMD_ARGS)
 	struct stream *s;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 static void
@@ -702,7 +701,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 	struct HdrIter *iter;
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return (0);
 	}
 
@@ -724,7 +723,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 		if (r == HdrDone)
 			break;
 	}
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 	//XXX document too many headers errors
 	if (r != HdrDone)
 		vtc_log(vl, s->hp->fatal, "Header decoding failed");
@@ -738,7 +737,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	struct frame *f;
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return (0);
 	}
 	f = s->frame;
@@ -769,7 +768,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	s->body[s->bodylen] = '\0';
 
 	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, f->data, s->body);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 	return (1);
 }
 
@@ -910,6 +909,7 @@ cmd_tx11obj(CMD_ARGS)
 			AN(*av);
 			hdr.value.ptr = *av;
 			hdr.value.size = strlen(*av);
+			vtc_log(vl, 3,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
 			encNextHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
@@ -1116,7 +1116,7 @@ cmd_rxrst(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1134,7 +1134,7 @@ cmd_rxrst(CMD_ARGS)
 	else
 		buf = "unknown";
 	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 static void
@@ -1189,7 +1189,7 @@ cmd_rxprio(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1208,7 +1208,7 @@ cmd_rxprio(CMD_ARGS)
 
 	vtc_log(vl, 3, "s%lu - prio->stream: %u", s->id, s->md.prio.stream);
 	vtc_log(vl, 3, "s%lu - prio->weight: %u", s->id, s->md.prio.weight);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 #define PUT_KV(name, val, code) \
@@ -1288,7 +1288,7 @@ cmd_rxsettings(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1318,7 +1318,7 @@ cmd_rxsettings(CMD_ARGS)
 
 		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 	}
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 /*
@@ -1371,7 +1371,7 @@ cmd_rxping(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1386,7 +1386,7 @@ cmd_rxping(CMD_ARGS)
 	s->md.ping.data[8] = '\0';
 
 	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 
@@ -1464,7 +1464,7 @@ cmd_rxgoaway(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1498,7 +1498,7 @@ cmd_rxgoaway(CMD_ARGS)
 	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
 	if (s->md.goaway.debug)
 		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 static void
 cmd_txwinup(CMD_ARGS)
@@ -1555,7 +1555,7 @@ cmd_rxwinup(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	wait_frame(s);
 	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->done));
+		AZ(pthread_cond_signal(&s->cond));
 		return;
 	}
 	f = s->frame;
@@ -1571,7 +1571,7 @@ cmd_rxwinup(CMD_ARGS)
 	s->md.winup_size = size;
 
 	vtc_log(vl, 3, "s%lu - winup->size: %d", s->id, size);
-	AZ(pthread_cond_signal(&s->done));
+	AZ(pthread_cond_signal(&s->cond));
 }
 
 static void
@@ -1753,7 +1753,6 @@ stream_new(const char *name, struct http2 *h)
 	ALLOC_OBJ(s, STREAM_MAGIC);
 	AN(s);
 	pthread_cond_init(&s->cond, NULL);
-	pthread_cond_init(&s->done, NULL);
 	REPLACE(s->name, name);
 	s->ws = 0xffff;
 
