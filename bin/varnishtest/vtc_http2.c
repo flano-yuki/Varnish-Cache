@@ -136,7 +136,8 @@ struct stream {
 	unsigned		reading;
 	struct http2		*hp;
 	uint64_t		ws;
-	int			ftype;
+
+	VTAILQ_HEAD(, frame)   fq;
 	union {
 		struct {
 			char data[9];
@@ -171,6 +172,7 @@ struct http2 {
 	struct vtclog		*vl;
 
 	int			fatal;
+	int			wf;
 
 	pthread_t		tp;
 	unsigned		running;
@@ -248,6 +250,8 @@ get_bytes(struct http2 *hp, char *buf, int n) {
 
 }
 
+VTAILQ_HEAD(fq_head, frame);
+
 struct frame {
 	unsigned	magic;
 #define	FRAME_MAGIC	0x5dd3ec4
@@ -256,6 +260,27 @@ struct frame {
 	uint8_t         type;
 	uint8_t         flags;
 	char		*data;
+
+	VTAILQ_ENTRY(frame)    list;
+
+	union {
+		struct {
+			char data[9];
+			int ack;
+		}		ping;
+		struct {
+			uint32_t err;
+			uint32_t stream;
+			char	 *debug;
+		}		goaway;
+		struct {
+			uint32_t stream;
+			uint8_t  weight;
+		}		prio;
+		uint32_t	winup_size;
+		uint32_t	rst_err;
+		double settings[SETTINGS_MAX+1];
+	} md;
 };
 
 void                                                                                                                                                                                                               
@@ -370,26 +395,19 @@ receive_frame(void *priv) {
 	char hdr[9];
 	struct frame *f;
 	struct stream *s;
-	unsigned need_read;
 	char *type;
 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
-		need_read = 0;
-		VTAILQ_FOREACH(s, &hp->streams, list) {
-			if (s->reading) {
-				need_read = 1;
-				break;
-			}
-		}
-		if (!need_read) {
+		if (hp->wf == 0) {
+			vtc_log(hp->vl, 1, "++++++++++++++++++++++no wanted frame wf");
 			AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
 			continue;
 		}
 		AZ(pthread_mutex_unlock(&hp->mtx));
 
 		if (!get_bytes(hp, hdr, 9)) {
-			vtc_log(hp->vl, hp->fatal, "could not get header");
+			vtc_log(hp->vl, 1, "could not get header");
 			AZ(pthread_mutex_unlock(&hp->mtx));
 			return (NULL);
 		}
@@ -411,6 +429,30 @@ receive_frame(void *priv) {
 			get_bytes(hp, f->data, f->size);
 		}
 
+		if (f->type == TYPE_PING) {
+			s = NULL;
+			while (!s) {
+				VTAILQ_FOREACH(s, &hp->streams, list) {
+					if (s->id == f->stid)
+						break;
+				}
+				if (!s)
+					AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
+			}
+			if (f->size != 8)
+				vtc_log(hp->vl, 0, "Size should be 8, but isn't (%d)", f->size);
+			f->md.ping.ack = f->flags & 1;
+			memcpy(f->md.ping.data, f->data, 8);
+			f->md.ping.data[8] = '\0';
+
+			vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
+
+			VTAILQ_INSERT_HEAD(&s->fq, f, list);
+			hp->wf--;
+			AZ(pthread_cond_signal(&s->cond));
+			AZ(pthread_mutex_lock(&hp->mtx));
+			continue;
+		}
 		AZ(pthread_mutex_lock(&hp->mtx));
 		while (f) {
 			VTAILQ_FOREACH(s, &hp->streams, list) {
@@ -418,7 +460,6 @@ receive_frame(void *priv) {
 					continue;
 				}
 				AZ(s->frame);
-				s->ftype = f->type;
 				s->reading = 0;
 				s->frame = f;
 				f = NULL;
@@ -436,7 +477,7 @@ receive_frame(void *priv) {
 }
 
 #define CHECK_LAST_FRAME(TYPE) \
-	if (!s->frame || s->ftype != TYPE_ ## TYPE) { \
+	if (!s->frame || s->frame->type != TYPE_ ## TYPE) { \
 		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
 	}
 
@@ -467,7 +508,7 @@ find_header(struct stream *s, char *k, int ks) {
 	return (NULL);
 }
 
-static const char *
+	static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
 
@@ -479,7 +520,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	n = 0;
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
-		return (s->md.ping.data);
+		return (f->md.ping.data);
 	}
 	else if (!strcmp(spec, "ping.ack")) {
 		CHECK_LAST_FRAME(PING);
@@ -1086,10 +1127,10 @@ cmd_txrst(CMD_ARGS)
 				if (!strcmp(h2_errs[err], *av))
 					break;
 			}
-			
+
 			if (h2_errs[err])
 				continue;
-				
+
 			err = strtoul(*av, &p, 0);
 			if (*p != '\0' || err > UINT32_MAX) {
 				vtc_log(hp->vl, 0, "Stream id must be a 32-bits integer "
@@ -1364,33 +1405,36 @@ cmd_txping(CMD_ARGS)
 }
 
 static void
-cmd_rxping(CMD_ARGS)
-{
-	struct stream *s;
-	struct frame *f;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->cond));
+rxstuff(struct stream *s, struct vtclog *vl, int type, char *fn) {
+	AZ(pthread_mutex_lock(&s->hp->mtx));
+	s->hp->wf++;
+	if (VTAILQ_EMPTY(&s->fq)) {
+		AZ(pthread_cond_signal(&s->hp->cond));
+		AZ(pthread_cond_wait(&s->cond, &s->hp->mtx));
+	}
+	if (VTAILQ_EMPTY(&s->fq)) {
+		AZ(pthread_mutex_unlock(&s->hp->mtx));
 		return;
 	}
-	f = s->frame;
-
-	if (f->type != TYPE_PING)
-		vtc_log(vl, 0, "Received something that is not a ping (type=0x%x)", f->type);
-	if (f->size != 8)
-		vtc_log(vl, 0, "Size should be 8, but isn't (%d)", f->size);
-
-	s->md.ping.ack = f->flags & 1;
-	memcpy(s->md.ping.data, f->data, 8);
-	s->md.ping.data[8] = '\0';
-
-	vtc_log(vl, 4, "s%lu - ping->data: %s", s->id, s->md.ping.data);
-	AZ(pthread_cond_signal(&s->cond));
+	s->frame = VTAILQ_LAST(&s->fq, fq_head);
+	AN(s->frame);
+	VTAILQ_REMOVE(&s->fq, s->frame, list);
+	AZ(pthread_mutex_unlock(&s->hp->mtx));
+	if (s->frame->type != type)
+		vtc_log(vl, 0, "Received frame of type %d is is invalid for %s",
+				type, fn);
 }
 
+#define RXFUNC(lctype, upctype) \
+	static void \
+	cmd_rx ## lctype(CMD_ARGS) { \
+		struct stream *s; \
+		CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC); \
+		rxstuff(s, vl, TYPE_ ## upctype, "rx ## lctype"); \
+	}
 
-static void
+RXFUNC(ping, PING)
+	static void
 cmd_txgoaway(CMD_ARGS)
 {
 	struct http2 *hp;
@@ -1415,10 +1459,10 @@ cmd_txgoaway(CMD_ARGS)
 				if (!strcmp(h2_errs[err], *av))
 					break;
 			}
-			
+
 			if (h2_errs[err])
 				continue;
-				
+
 			err = strtoul(*av, &p, 0);
 			if (*p != '\0' || err > UINT32_MAX) {
 				vtc_log(hp->vl, 0, "Error must be a 32-bits integer "
@@ -1546,7 +1590,7 @@ cmd_txwinup(CMD_ARGS)
 	write_frame(hp, &f, 4, "txwinup");
 }
 
-static void
+	static void
 cmd_rxwinup(CMD_ARGS)
 {
 	struct stream *s;
@@ -1754,6 +1798,7 @@ stream_new(const char *name, struct http2 *h)
 	AN(s);
 	pthread_cond_init(&s->cond, NULL);
 	REPLACE(s->name, name);
+	VTAILQ_INIT(&s->fq);
 	s->ws = 0xffff;
 
 	s->id = strtoul(name, &p, 0);
@@ -1912,6 +1957,7 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	AN(hp);
 	pthread_mutex_init(&hp->mtx, NULL);
 	pthread_cond_init(&hp->cond, NULL);
+	VTAILQ_INIT(&hp->streams);
 	hp->fd = sock;
 	hp->timeout = vtc_maxdur * 1000 / 2;
 	hp->sfd = sfd;
