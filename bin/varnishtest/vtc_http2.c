@@ -389,7 +389,8 @@ receive_frame(void *priv) {
 		AZ(pthread_mutex_unlock(&hp->mtx));
 
 		if (!get_bytes(hp, hdr, 9)) {
-			vtc_log(hp->vl, 3, "could not get header");
+			vtc_log(hp->vl, hp->fatal, "could not get header");
+			AZ(pthread_mutex_unlock(&hp->mtx));
 			return (NULL);
 		}
 		ALLOC_OBJ(f, FRAME_MAGIC);
@@ -717,7 +718,7 @@ grab_hdr(struct stream *s, struct vtclog *vl, int type) {
 		r = decNextHdr(iter, s->hdrs + s->nhdrs);
 		if (r == HdrErr )
 			break;
-		vtc_log(vl, 3, "s%lu - header: %s : %s (%d)",
+		vtc_log(vl, 4, "s%lu - header: %s : %s (%d)",
 				s->id, s->hdrs[s->nhdrs].key.ptr, s->hdrs[s->nhdrs].value.ptr, s->nhdrs);
 		s->nhdrs++;
 		if (r == HdrDone)
@@ -746,7 +747,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 		vtc_log(vl, 0, "Received something that is not a data frame (type=0x%x)", f->type);
 
 	if (!f->size) {
-		vtc_log(vl, 3, "s%lu - no data", s->id);
+		vtc_log(vl, 4, "s%lu - no data", s->id);
 		return (1);
 	}
 
@@ -767,7 +768,7 @@ grab_data(struct stream *s, struct vtclog *vl) {
 	s->bodylen += f->size;
 	s->body[s->bodylen] = '\0';
 
-	vtc_log(vl, 3, "s%lu - data: %s - full body: %s", s->id, f->data, s->body);
+	vtc_log(vl, 3, "s%lu - data: %s", s->id, f->data);
 	AZ(pthread_cond_signal(&s->cond));
 	return (1);
 }
@@ -909,7 +910,7 @@ cmd_tx11obj(CMD_ARGS)
 			AN(*av);
 			hdr.value.ptr = *av;
 			hdr.value.size = strlen(*av);
-			vtc_log(vl, 3,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
+			vtc_log(vl, 4,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
 			encNextHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
@@ -1005,7 +1006,7 @@ cmd_rxdata(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rx*body spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
 
 	while (times-- || (loop && !(s->frame->flags | END_STREAM)))
 		if (!grab_data(s, vl))
@@ -1055,7 +1056,7 @@ cmd_rxhdrs(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rx*hdrs spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
 
 	while (times-- || (loop && !(s->frame->flags | END_HEADERS))) {
 		if (!grab_hdr(s, vl, expect))
@@ -1133,7 +1134,7 @@ cmd_rxrst(CMD_ARGS)
 		buf = h2_errs[err];
 	else
 		buf = "unknown";
-	vtc_log(vl, 3, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+	vtc_log(vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
 	AZ(pthread_cond_signal(&s->cond));
 }
 
@@ -1308,7 +1309,6 @@ cmd_rxsettings(CMD_ARGS)
 		if (t <= SETTINGS_MAX) {
 			buf = h2_settings[t];
 			s->md.settings[t] = v;
-			vtc_log(vl, 3, "putting %d into %d", v, t);
 		} else
 			buf = "unknown";
 		i += 4;
@@ -1316,7 +1316,7 @@ cmd_rxsettings(CMD_ARGS)
 		if (t == 1 )
 			resizeTable(s->hp->outctx, v);
 
-		vtc_log(vl, 3, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+		vtc_log(vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 	}
 	AZ(pthread_cond_signal(&s->cond));
 }
@@ -1385,7 +1385,7 @@ cmd_rxping(CMD_ARGS)
 	memcpy(s->md.ping.data, f->data, 8);
 	s->md.ping.data[8] = '\0';
 
-	vtc_log(vl, 3, "s%lu - ping->data: %s", s->id, s->md.ping.data);
+	vtc_log(vl, 4, "s%lu - ping->data: %s", s->id, s->md.ping.data);
 	AZ(pthread_cond_signal(&s->cond));
 }
 
@@ -1565,7 +1565,7 @@ cmd_rxwinup(CMD_ARGS)
 	if (f->size != 4)
 		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
 	if (f->data[0] & (1<<7))
-		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
+		vtc_log(vl, s->hp->fatal, "First bit of data is reserved and should be 0");
 
 	size = ntohl(*(uint32_t*)f->data);
 	s->md.winup_size = size;
