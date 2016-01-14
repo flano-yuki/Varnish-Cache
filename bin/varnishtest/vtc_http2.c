@@ -1418,6 +1418,7 @@ static void
 cmd_rxhdrs(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	char *p;
 	int loop = 0;
 	int times = 1;
@@ -1454,6 +1455,7 @@ static void
 cmd_rxcont(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	char *p;
 	int loop = 0;
 	int times = 1;
@@ -1488,6 +1490,7 @@ static void
 cmd_rxdata(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	char *p;
 	int loop = 0;
 	int times = 1;
@@ -1548,7 +1551,7 @@ cmd_rxreqsp(CMD_ARGS)
 		CHKFRAME(f->type, TYPE_CONT, rcv, *av);
 	}
 
-	while (!end_stream && f = rxstuff(s)) {
+	while (!end_stream && (f = rxstuff(s))) {
 		rcv++;
 		CHKFRAME(f->type, TYPE_DATA, rcv, *av);
 		end_stream = f->flags & END_STREAM;
