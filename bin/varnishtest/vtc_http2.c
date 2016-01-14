@@ -406,6 +406,7 @@ receive_frame(void *priv) {
 			if (!hp->running)
 				return (NULL);
 		}
+
 		if (f->type == TYPE_DATA) {
 			if (!f->size) {
 				vtc_log(hp->vl, 4, "s%lu - no data", s->id);
@@ -1632,7 +1633,6 @@ static const struct cmds stream_cmds[] = {
 	{ "rxreq",		cmd_rxreqsp },
 	{ "txresp",		cmd_tx11obj },
 	{ "rxresp",		cmd_rxreqsp },
-	//priority
 	{ "txprio",		cmd_txprio },
 	{ "rxprio",		cmd_rxprio },
 	{ "txrst",		cmd_txrst },
