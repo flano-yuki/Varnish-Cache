@@ -1364,8 +1364,10 @@ cmd_txwinup(CMD_ARGS)
 	write_frame(hp, &f);
 }
 
-static int
+static struct frame *
 rxstuff(struct stream *s) {
+	struct frame *f;
+
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 
 	AZ(pthread_mutex_lock(&s->hp->mtx));
@@ -1376,14 +1378,15 @@ rxstuff(struct stream *s) {
 	}
 	if (VTAILQ_EMPTY(&s->fq)) {
 		AZ(pthread_mutex_unlock(&s->hp->mtx));
-		return (0);
+		return (NULL);
 	}
 	clean_frame(s);
-	s->frame = VTAILQ_LAST(&s->fq, fq_head);
-	AN(s->frame);
+	f = VTAILQ_LAST(&s->fq, fq_head);
 	VTAILQ_REMOVE(&s->fq, s->frame, list);
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
-	return (1);
+
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	return (f);
 }
 
 #define CHKFRAME(rt, wt, rcv, func) \
@@ -1420,11 +1423,13 @@ cmd_rxhdrs(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
 
 	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
-		if (!rxstuff(s))
+		f = rxstuff(s);
+		if (!f)
 			return;
 		CHKFRAME(s->frame->type, expect, rcv, "rxhdrs");
 		expect = TYPE_CONT;
 	}
+	s->frame = f;
 }
 
 static void
@@ -1452,10 +1457,12 @@ cmd_rxcont(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
 
 	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
-		if (!rxstuff(s))
+		f = rxstuff(s);
+		if (!f)
 			return;
 		CHKFRAME(s->frame->type, TYPE_CONT, rcv, "rxcont");
 	}
+	s->frame = f;
 }
 
 
@@ -1484,13 +1491,14 @@ cmd_rxdata(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
 
 	while (rcv++ < times || (loop && !(s->frame->flags | END_STREAM))) {
-		if (!rxstuff(s))
+		f = rxstuff(s);
+		if (!f)
 			return;
 		CHKFRAME(s->frame->type, TYPE_DATA, rcv, "rxhdata");
 	}
+	s->frame = f;
 }
 
-/*TODO clean that CAST_OBJ_NOTNULL  non-sense*/
 static void
 cmd_rxreqsp(CMD_ARGS)
 {
@@ -1503,7 +1511,8 @@ cmd_rxreqsp(CMD_ARGS)
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
 	clean_headers(s);
-	if (!rxstuff(s))
+	f = rxstuff(s);
+	if (!f)
 		return;
 
 	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
@@ -1514,19 +1523,19 @@ cmd_rxreqsp(CMD_ARGS)
 	end_stream = f->flags & END_STREAM;
 
 	while (!(f->flags | END_HEADERS)) {
-		if (!rxstuff(s))
+		f = rxstuff(s);
+		if (!f)
 			return;
-		CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
 		rcv++;
 		CHKFRAME(f->type, TYPE_CONT, rcv, *av);
 	}
 
-	while (!end_stream && rxstuff(s)) {
-		CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
+	while (!end_stream && f = rxstuff(s)) {
 		rcv++;
 		CHKFRAME(f->type, TYPE_DATA, rcv, *av);
 		end_stream = f->flags & END_STREAM;
 	}
+	s->frame = f;
 }
 
 #define RXFUNC(lctype, upctype) \
