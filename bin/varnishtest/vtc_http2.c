@@ -400,7 +400,6 @@ receive_frame(void *priv) {
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
 		if (hp->wf == 0) {
-			vtc_log(hp->vl, 1, "++++++++++++++++++++++no wanted frame wf");
 			AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
 			continue;
 		}
@@ -429,16 +428,58 @@ receive_frame(void *priv) {
 			get_bytes(hp, f->data, f->size);
 		}
 
-		if (f->type == TYPE_PING) {
-			s = NULL;
-			while (!s) {
-				VTAILQ_FOREACH(s, &hp->streams, list) {
-					if (s->id == f->stid)
-						break;
-				}
-				if (!s)
-					AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
+		s = NULL;
+		while (!s) {
+			VTAILQ_FOREACH(s, &hp->streams, list) {
+				if (s->id == f->stid)
+					break;
 			}
+			if (!s)
+				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
+			if (!hp->running)
+				return (NULL);
+		}
+		if (f->type == TYPE_RST) {
+			uint32_t err;
+			char *buf;
+			if (f->size != 4)
+				vtc_log(hp->vl, 0, "Size should be 4, but isn't (%d)", f->size);
+
+			err = ntohl(*(uint32_t*)f->data);
+			f->md.rst_err = err;
+
+			vtc_log(hp->vl, 2, "ouch");
+			if (err <= ERR_MAX)
+				buf = h2_errs[err];
+			else
+				buf = "unknown";
+			vtc_log(hp->vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+		} else if (f->type == TYPE_SETTINGS) {
+			int i, t, v;
+			char *buf;
+			if (f->size % 6)
+				vtc_log(hp->vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
+
+			for (i = 0; i <= SETTINGS_MAX; i++)
+				f->md.settings[i] = NAN;
+
+			for (i = 0; i < f->size;) {
+				t = ntohs(*(uint16_t *)(f->data + i));
+				i += 2;
+				v = ntohl(*(uint32_t *)(f->data + i));
+				if (t <= SETTINGS_MAX) {
+					buf = h2_settings[t];
+					f->md.settings[t] = v;
+				} else
+					buf = "unknown";
+				i += 4;
+
+				if (t == 1 )
+					resizeTable(s->hp->outctx, v);
+
+				vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+			}
+		} else if (f->type == TYPE_PING) {
 			if (f->size != 8)
 				vtc_log(hp->vl, 0, "Size should be 8, but isn't (%d)", f->size);
 			f->md.ping.ack = f->flags & 1;
@@ -446,30 +487,12 @@ receive_frame(void *priv) {
 			f->md.ping.data[8] = '\0';
 
 			vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
-
-			VTAILQ_INSERT_HEAD(&s->fq, f, list);
-			hp->wf--;
-			AZ(pthread_cond_signal(&s->cond));
-			AZ(pthread_mutex_lock(&hp->mtx));
-			continue;
 		}
+		VTAILQ_INSERT_HEAD(&s->fq, f, list);
+		hp->wf--;
+		AZ(pthread_cond_signal(&s->cond));
 		AZ(pthread_mutex_lock(&hp->mtx));
-		while (f) {
-			VTAILQ_FOREACH(s, &hp->streams, list) {
-				if (s->id != f->stid || !s->reading) {
-					continue;
-				}
-				AZ(s->frame);
-				s->reading = 0;
-				s->frame = f;
-				f = NULL;
-				AZ(pthread_cond_signal(&s->cond));
-				AZ(pthread_cond_wait(&s->cond, &hp->mtx));
-				break;
-			}
-			if (f)
-				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
-		}
+		continue;
 	}
 	AZ(pthread_mutex_unlock(&hp->mtx));
 
@@ -483,10 +506,10 @@ receive_frame(void *priv) {
 
 #define RETURN_SETTINGS(idx) \
 { \
-	if isnan(s->md.settings[idx]) { \
+	if isnan(f->md.settings[idx]) { \
 		return (NULL); \
 	} \
-	snprintf(buf, 20, "%.0f", s->md.settings[idx]); \
+	snprintf(buf, 20, "%.0f", f->md.settings[idx]); \
 	return (buf); \
 } while (0);
 
@@ -540,11 +563,11 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	}
 	else if (!strcmp(spec, "prio.weight")) {
 		CHECK_LAST_FRAME(PRIORITY);
-		RETURN_BUFFED(s->md.prio.weight);
+		RETURN_BUFFED(s->frame->md.prio.weight);
 	}
 	else if (!strcmp(spec, "rst.err")) {
 		CHECK_LAST_FRAME(RST);
-		RETURN_BUFFED(s->md.rst_err);
+		RETURN_BUFFED(s->frame->md.rst_err);
 	} /* SETTINGS */
 	else if (!strncmp(spec, "settings.", 9)) {
 		CHECK_LAST_FRAME(SETTINGS);
@@ -557,9 +580,9 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			return (buf);
 		}
 		else if (!strcmp(spec, "push")) {
-			if (isnan(s->md.settings[2]))
+			if (isnan(f->md.settings[2]))
 				return (NULL);
-			else if (s->md.settings[2] == 1)
+			else if (f->md.settings[2] == 1)
 				snprintf(buf, 20, "true");
 			else
 				snprintf(buf, 20, "false");
@@ -1149,37 +1172,6 @@ cmd_txrst(CMD_ARGS)
 }
 
 static void
-cmd_rxrst(CMD_ARGS)
-{
-	struct frame *f;
-	struct stream *s;
-	uint32_t err;
-	char *buf;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->cond));
-		return;
-	}
-	f = s->frame;
-
-	if (f->type != TYPE_RST)
-		vtc_log(vl, 0, "Received something that is not a reset (type=0x%x)", f->type);
-	if (f->size != 4)
-		vtc_log(vl, 0, "Size should be 4, but isn't (%d)", f->size);
-
-	err = ntohl(*(uint32_t*)f->data);
-	s->md.rst_err = err;
-
-	if (err <= ERR_MAX)
-		buf = h2_errs[err];
-	else
-		buf = "unknown";
-	vtc_log(vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
-	AZ(pthread_cond_signal(&s->cond));
-}
-
-static void
 cmd_txprio(CMD_ARGS)
 {
 	struct http2 *hp;
@@ -1318,50 +1310,6 @@ cmd_txsettings(CMD_ARGS)
 	write_frame(hp, &f, 4, "txsettings");
 }
 
-static void
-cmd_rxsettings(CMD_ARGS)
-{
-	struct stream *s;
-	char *buf;
-	int i = 0;
-	uint16_t t;
-	uint32_t v;
-	struct frame *f;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->cond));
-		return;
-	}
-	f = s->frame;
-
-	if (f->type != TYPE_SETTINGS)
-		vtc_log(vl, 0, "Received something that is not a settings (type=0x%x)", f->type);
-	if (f->size % 6)
-		vtc_log(vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
-
-	for (i = 0; i < SETTINGS_MAX; i++)
-		s->md.settings[i] = NAN;
-
-	for (i = 0; i < f->size;) {
-		t = ntohs(*(uint16_t *)(f->data + i));
-		i += 2;
-		v = ntohl(*(uint32_t *)(f->data + i));
-		if (t <= SETTINGS_MAX) {
-			buf = h2_settings[t];
-			s->md.settings[t] = v;
-		} else
-			buf = "unknown";
-		i += 4;
-
-		if (t == 1 )
-			resizeTable(s->hp->outctx, v);
-
-		vtc_log(vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
-	}
-	AZ(pthread_cond_signal(&s->cond));
-}
-
 /*
 static void
 cmd_txpush(CMD_ARGS)
@@ -1433,8 +1381,11 @@ rxstuff(struct stream *s, struct vtclog *vl, int type, char *fn) {
 		rxstuff(s, vl, TYPE_ ## upctype, "rx ## lctype"); \
 	}
 
-RXFUNC(ping, PING)
-	static void
+RXFUNC(rst,	RST)
+RXFUNC(settings,SETTINGS)
+RXFUNC(ping,	PING)
+
+static void
 cmd_txgoaway(CMD_ARGS)
 {
 	struct http2 *hp;
