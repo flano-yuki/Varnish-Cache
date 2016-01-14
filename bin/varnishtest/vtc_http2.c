@@ -500,6 +500,36 @@ receive_frame(void *priv) {
 			f->md.ping.data[8] = '\0';
 
 			vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
+		} else if (f->type == TYPE_GOAWAY) {
+			char *err_buf;
+			uint32_t err, stid;
+			if (f->size < 8)
+				vtc_log(hp->vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
+			if (f->data[0] & (1<<7))
+				vtc_log(hp->vl, 0, "First bit of data is reserved and should be 0");
+
+			stid = ntohl(((uint32_t*)f->data)[0]);
+			err = ntohl(((uint32_t*)f->data)[1]);
+			f->md.goaway.err = err;
+			f->md.goaway.stream = stid;
+
+			if (err <= ERR_MAX)
+				err_buf = h2_errs[err];
+			else
+				err_buf = "unknown";
+
+			if (f->size > 8) {
+				f->md.goaway.debug = malloc(f->size - 8 + 1);
+				AN(f->md.goaway.debug);
+				f->md.goaway.debug[f->size - 8] = '\0';
+
+				memcpy(f->md.goaway.debug, f->data + 8, f->size - 8);
+			}
+
+			vtc_log(hp->vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
+			vtc_log(hp->vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
+			if (f->md.goaway.debug)
+				vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
 		}
 		VTAILQ_INSERT_HEAD(&s->fq, f, list);
 		hp->wf--;
@@ -612,13 +642,13 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		CHECK_LAST_FRAME(GOAWAY);
 
 		if (!strcmp(spec, "err")) {
-			RETURN_BUFFED(s->md.goaway.err);
+			RETURN_BUFFED(f->md.goaway.err);
 		}
 		else if (!strcmp(spec, "laststream")) {
-			RETURN_BUFFED(s->md.goaway.stream);
+			RETURN_BUFFED(f->md.goaway.stream);
 		}
 		else if (!strcmp(spec, "debug")) {
-			return (s->md.goaway.debug);
+			return (f->md.goaway.debug);
 		}
 	} /* GENERIC FRAME */
 	else if (!strncmp(spec, "frame.", 6)) {
@@ -1367,6 +1397,7 @@ RXFUNC(prio,	PRIORITY)
 RXFUNC(rst,	RST)
 RXFUNC(settings,SETTINGS)
 RXFUNC(ping,	PING)
+RXFUNC(goaway,	GOAWAY)
 
 static void
 cmd_txgoaway(CMD_ARGS)
@@ -1431,53 +1462,6 @@ cmd_txgoaway(CMD_ARGS)
 	free(f.data);
 }
 
-static void
-cmd_rxgoaway(CMD_ARGS)
-{
-	struct frame *f;
-	struct stream *s;
-	char *err_buf;
-	uint32_t err, stid;
-
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->cond));
-		return;
-	}
-	f = s->frame;
-
-	if (f->type != TYPE_GOAWAY)
-		vtc_log(vl, 0, "Received something that is not a goaway (type=0x%x)", f->type);
-	if (f->size < 8)
-		vtc_log(vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
-	if (f->data[0] & (1<<7))
-		vtc_log(vl, 0, "First bit of data is reserved and should be 0");
-
-	stid = ntohl(((uint32_t*)f->data)[0]);
-	err = ntohl(((uint32_t*)f->data)[1]);
-	s->md.goaway.err = err;
-	s->md.goaway.stream = stid;
-
-	if (err <= ERR_MAX)
-		err_buf = h2_errs[err];
-	else
-		err_buf = "unknown";
-
-	if (f->size > 8) {
-		s->md.goaway.debug = malloc(f->size - 8 + 1);
-		AN(s->md.goaway.debug);
-		s->md.goaway.debug[f->size - 8] = '\0';
-
-		memcpy(s->md.goaway.debug, f->data + 8, f->size - 8);
-	}
-
-	vtc_log(vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
-	vtc_log(vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
-	if (s->md.goaway.debug)
-		vtc_log(vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
-	AZ(pthread_cond_signal(&s->cond));
-}
 static void
 cmd_txwinup(CMD_ARGS)
 {
