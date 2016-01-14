@@ -1181,7 +1181,7 @@ static void
 cmd_txpush(CMD_ARGS)
 
 static void
-cmd_txpush(CMD_ARGS)
+cmd_rxpush(CMD_ARGS)
 */
 static void
 cmd_txping(CMD_ARGS)
@@ -1216,216 +1216,6 @@ cmd_txping(CMD_ARGS)
 	if (!f.data)
 		f.data = buf;
 	write_frame(hp, &f, 4, "txping");
-}
-
-static int
-rxstuff(struct stream *s, struct vtclog *vl) {
-	AZ(pthread_mutex_lock(&s->hp->mtx));
-	s->hp->wf++;
-	if (VTAILQ_EMPTY(&s->fq)) {
-		AZ(pthread_cond_signal(&s->hp->cond));
-		AZ(pthread_cond_wait(&s->cond, &s->hp->mtx));
-	}
-	if (VTAILQ_EMPTY(&s->fq)) {
-		AZ(pthread_mutex_unlock(&s->hp->mtx));
-		return (0);
-	}
-	s->frame = VTAILQ_LAST(&s->fq, fq_head);
-	AN(s->frame);
-	VTAILQ_REMOVE(&s->fq, s->frame, list);
-	AZ(pthread_mutex_unlock(&s->hp->mtx));
-	return (1);
-}
-
-static void
-cmd_rxhdrs(CMD_ARGS)
-{
-	struct stream *s;
-	char *p;
-	int loop = 0;
-	int times = 1;
-	int rcv = 0;
-	// XXX make it an enum
-	int expect = TYPE_HEADERS;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-
-	while (*++av) {
-		if (!strcmp(*av, "-some")) {
-			times = strtoul(*++av, &p, 0);
-			if (*p != '\0') {
-				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
-			}
-		} else if (!strcmp(*av, "-all")) {
-			loop = 1;
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
-
-	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
-		if (!rxstuff(s, vl))
-			return;
-		if (s->frame->type != expect) {
-			vtc_log(vl, 0, "Frame %d received is of type %d, "
-					"invalid for %s",
-					rcv,
-					s->frame->type,
-					"rxhdrs");
-			return;
-		}
-
-		expect = TYPE_CONT;
-	}
-}
-
-static void
-cmd_rxcont(CMD_ARGS)
-{
-	struct stream *s;
-	char *p;
-	int loop = 0;
-	int times = 1;
-	int rcv = 0;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-
-	while (*++av) {
-		if (!strcmp(*av, "-some")) {
-			times = strtoul(*++av, &p, 0);
-			if (*p != '\0') {
-				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
-			}
-		} else if (!strcmp(*av, "-all")) {
-			loop = 1;
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
-
-	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
-		if (!rxstuff(s, vl))
-			return;
-		if (s->frame->type != TYPE_CONT) {
-			vtc_log(vl, 0, "Frame %d received is of type %d, "
-					"invalid for %s",
-					rcv,
-					s->frame->type,
-					"rxhdrs");
-			return;
-		}
-	}
-}
-
-
-static void
-cmd_rxdata(CMD_ARGS)
-{
-	struct stream *s;
-	char *p;
-	int loop = 0;
-	uint32_t times = 1;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-
-	while (*++av) {
-		if (!strcmp(*av, "-some")) {
-			times = strtoul(*++av, &p, 0);
-			if (*p != '\0') {
-				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
-			}
-		} else if (!strcmp(*av, "-all")) {
-			loop = 1;
-		} else
-			break;	
-	}
-	if (*av != NULL)
-		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
-
-	while (times-- || (loop && !(s->frame->flags | END_STREAM))) {
-		if (!rxstuff(s, vl))
-			return;
-		if (s->frame->type != TYPE_DATA) {
-			vtc_log(vl, 0, "Received frame of type %d "
-					"is invalid for %s",
-					s->frame->type, "rxdata");
-			return;
-		}
-	}
-}
-
-static void
-cmd_rxreqsp(CMD_ARGS)
-{
-	struct stream *s;
-	int end_stream;
-	int rcv = 0;
-
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	clean_headers(s);
-	if (!rxstuff(s, vl))
-		return;
-	AN(s->frame);
-	rcv++;
-	if (s->frame->type != TYPE_HEADERS) {
-		vtc_log(vl, 0, "Received frame of type %d "
-				"is invalid for %s (expected HEADERS)",
-				s->frame->type, *av);
-		return;
-	}
-
-	end_stream = s->frame->flags & END_STREAM;
-
-	while (!(s->frame->flags | END_HEADERS)) {
-		if (!rxstuff(s, vl))
-			return;
-		AN(s->frame);
-		rcv++;
-		if (s->frame->type != TYPE_CONT) {
-			vtc_log(vl, 0, "Received frame of type %d "
-					"is invalid for %s (expected CONT)",
-					s->frame->type, *av);
-			return;
-		}
-	}
-
-	while (!end_stream && rxstuff(s, vl)) {
-		AN(s->frame);
-		rcv++;
-		if (s->frame->type != TYPE_DATA) {
-			vtc_log(vl, 0, "Received frame of type %d "
-					"is invalid for %s (expected DATA)",
-					s->frame->type, *av);
-			return;
-		}
-		end_stream = s->frame->flags & END_STREAM;
-	}
-}
-
-#define RXFUNC(lctype, upctype) \
-	static void \
-	cmd_rx ## lctype(CMD_ARGS) { \
-		struct stream *s; \
-		CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC); \
-		if (!rxstuff(s, vl)) \
-				return; \
-		if (s->frame->type != TYPE_ ## upctype) \
-			vtc_log(vl, 0, "Received frame of type %d " \
-					"is invalid for %s", \
-					s->frame->type, "rx ## lctype"); \
-	}
-
-RXFUNC(prio,	PRIORITY)
-RXFUNC(rst,	RST)
-RXFUNC(settings,SETTINGS)
-RXFUNC(ping,	PING)
-RXFUNC(goaway,	GOAWAY)
-RXFUNC(winup,	WINUP)
-
-static void
-cmd_rxframe(CMD_ARGS) {
-	struct stream *s;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	rxstuff(s, vl);
 }
 
 static void
@@ -1536,6 +1326,192 @@ cmd_txwinup(CMD_ARGS)
 	f.data = (void *)&size;
 	write_frame(hp, &f, 4, "txwinup");
 }
+
+static int
+rxstuff(struct stream *s, struct vtclog *vl) {
+	AZ(pthread_mutex_lock(&s->hp->mtx));
+	s->hp->wf++;
+	if (VTAILQ_EMPTY(&s->fq)) {
+		AZ(pthread_cond_signal(&s->hp->cond));
+		AZ(pthread_cond_wait(&s->cond, &s->hp->mtx));
+	}
+	if (VTAILQ_EMPTY(&s->fq)) {
+		AZ(pthread_mutex_unlock(&s->hp->mtx));
+		return (0);
+	}
+	s->frame = VTAILQ_LAST(&s->fq, fq_head);
+	AN(s->frame);
+	VTAILQ_REMOVE(&s->fq, s->frame, list);
+	AZ(pthread_mutex_unlock(&s->hp->mtx));
+	return (1);
+}
+
+#define CHKFRAME(rt, wt, rcv, func) \
+	if (rt != wt) { \
+		vtc_log(vl, 0, "Frame #%d for %s was of type %d" \
+				"instead of %d", \
+				rcv, func, rt, wt); \
+		return;
+	}
+
+static void
+cmd_rxhdrs(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	int times = 1;
+	int rcv = 0;
+	// XXX make it an enum
+	int expect = TYPE_HEADERS;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
+
+	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
+		if (!rxstuff(s, vl))
+			return;
+		CHKFRAME(s->frame->type, expect, rcv, "rxhdrs");
+		expect = TYPE_CONT;
+	}
+}
+
+static void
+cmd_rxcont(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	int times = 1;
+	int rcv = 0;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
+
+	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
+		if (!rxstuff(s, vl))
+			return;
+		CHKFRAME(s->frame->type, TYPE_CONT, rcv, "rxcont");
+	}
+}
+
+
+static void
+cmd_rxdata(CMD_ARGS)
+{
+	struct stream *s;
+	char *p;
+	int loop = 0;
+	uint32_t times = 1;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			times = strtoul(*++av, &p, 0);
+			if (*p != '\0') {
+				vtc_log(vl, 0, "-some requires an integer arg (%s)", *av);
+			}
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;	
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
+
+	while (times-- || (loop && !(s->frame->flags | END_STREAM))) {
+		if (!rxstuff(s, vl))
+			return;
+		CHKFRAME(s->frame->type, TYPE_DATA, rcv, "rxhdata");
+	}
+}
+
+static void
+cmd_rxreqsp(CMD_ARGS)
+{
+	struct stream *s;
+	int end_stream;
+	int rcv = 0;
+
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	clean_headers(s);
+	if (!rxstuff(s, vl))
+		return;
+	AN(s->frame);
+	rcv++;
+	CHKFRAME(s->frame->type, TYPE_HEADERS, rcv, *av);
+
+	end_stream = s->frame->flags & END_STREAM;
+
+	while (!(s->frame->flags | END_HEADERS)) {
+		if (!rxstuff(s, vl))
+			return;
+		AN(s->frame);
+		rcv++;
+		CHKFRAME(s->frame->type, TYPE_CONT, rcv, *av);
+	}
+
+	while (!end_stream && rxstuff(s, vl)) {
+		AN(s->frame);
+		rcv++;
+		CHKFRAME(s->frame->type, TYPE_DATA, rcv, *av);
+		end_stream = s->frame->flags & END_STREAM;
+	}
+}
+
+#define RXFUNC(lctype, upctype) \
+	static void \
+	cmd_rx ## lctype(CMD_ARGS) { \
+		struct stream *s; \
+		CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC); \
+		if (!rxstuff(s, vl)) \
+				return; \
+		if (s->frame->type != TYPE_ ## upctype) \
+			vtc_log(vl, 0, "Received frame of type %d " \
+					"is invalid for %s", \
+					s->frame->type, "rx ## lctype"); \
+	}
+
+RXFUNC(prio,	PRIORITY)
+RXFUNC(rst,	RST)
+RXFUNC(settings,SETTINGS)
+RXFUNC(ping,	PING)
+RXFUNC(goaway,	GOAWAY)
+RXFUNC(winup,	WINUP)
+
+static void
+cmd_rxframe(CMD_ARGS) {
+	struct stream *s;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	rxstuff(s, vl);
+}
+
+
+
 static void
 cmd_http_expect(CMD_ARGS)
 {
