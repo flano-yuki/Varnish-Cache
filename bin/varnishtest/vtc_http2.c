@@ -1177,14 +1177,24 @@ cmd_txsettings(CMD_ARGS)
 						*av);
 			cursor += sizeof(uint32_t);
 			f.size += 6;
-		} else if (!strcmp(*av, "-hdrtbl"))	{
+		}
+		else if (!strcmp(*av, "-hdrtbl")) {
 			PUT_KV(vl, hdrtbl, val, 0x1);
 			resizeTable(s->hp->inctx, val);
-		} else if (!strcmp(*av, "-maxstreams")) { PUT_KV(vl, maxstreams, val, 0x3);
-		} else if (!strcmp(*av, "-winsize"))	{ PUT_KV(vl, winsize, val, 0x4);
-		} else if (!strcmp(*av, "-framesize"))	{ PUT_KV(vl, framesize, val, 0x5);
-		} else if (!strcmp(*av, "-hdrsize"))	{ PUT_KV(vl, hdrsize, val, 0x6);
-		} else if (!strcmp(*av, "-ack")) {
+		}
+		else if (!strcmp(*av, "-maxstreams")) {
+			PUT_KV(vl, maxstreams, val, 0x3);
+		}
+		else if (!strcmp(*av, "-winsize"))	{
+			PUT_KV(vl, winsize, val, 0x4);
+		}
+		else if (!strcmp(*av, "-framesize"))	{
+			PUT_KV(vl, framesize, val, 0x5);
+		}
+		else if (!strcmp(*av, "-hdrsize")){
+			PUT_KV(vl, hdrsize, val, 0x6);
+		}
+		else if (!strcmp(*av, "-ack")) {
 			f.flags |= 1;
 		} else
 			break;
