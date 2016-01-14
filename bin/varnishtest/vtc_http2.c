@@ -185,6 +185,10 @@ http_write(const struct http2 *hp, int lvl, char *buf, int s, const char *pfx)
 {
 	ssize_t l;
 
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	AN(buf);
+	AN(pfx);
+
 	vtc_dump(hp->vl, lvl, pfx, buf, s);
 	l = write(hp->fd, buf, s);
 	if (l != s)
@@ -196,6 +200,9 @@ static int
 get_bytes(struct http2 *hp, char *buf, int n) {
 	int i;
 	struct pollfd pfd[1];
+
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	AN(buf);
 
 	while (n > 0) {
 		pfd[0].fd = hp->fd;
@@ -266,7 +273,11 @@ struct frame {
 };
 
 static void
-readFrameHeader(struct frame *f, char *buf) {
+readFrameHeader(struct frame *f, char *buf)
+{
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	AN(buf);
+
 	f->size  = buf[0] << 16;
 	f->size += buf[1] << 8;
 	f->size += buf[2];
@@ -282,7 +293,10 @@ readFrameHeader(struct frame *f, char *buf) {
 };
 
 static void
-writeFrameHeader(char *buf, struct frame *f) {
+writeFrameHeader(char *buf, struct frame *f)
+{
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	AN(buf);
 	buf[0] = (f->size >> 16) & 0xff;
 	buf[1] = (f->size >>  8) & 0xff;
 	buf[2] = (f->size      ) & 0xff;
@@ -308,9 +322,11 @@ do { \
 } while(0)
 
 static void
-clean_frame(struct stream *s) {
+clean_frame(struct stream *s)
+{
 	struct frame *f;
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+
 	if (!s->frame)
 		return;
 	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
@@ -322,12 +338,15 @@ clean_frame(struct stream *s) {
 }
 
 static void
-write_frame(struct http2 *hp, struct frame *f) {
+write_frame(struct http2 *hp, struct frame *f)
+{
 	ssize_t l;
 	const char *type;
 	char hdr[9];
+
 	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+
 	writeFrameHeader(hdr, f);
 
 	if (f->type <= TYPE_MAX)
@@ -367,6 +386,7 @@ receive_frame(void *priv) {
 	const char *type;
 
 	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
+
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
 		if (hp->wf == 0) {
@@ -1780,9 +1800,10 @@ cmd_stream(CMD_ARGS)
 {
 	struct stream *s, *s2;
 
+	struct http2 *h = (struct http2 *)priv;
 	(void)cmd;
 	(void)vl;
-	CAST_OBJ_NOTNULL(h, priv, HTTP@_MAGIC)
+	CAST_OBJ_NOTNULL(h, priv, HTTP2_MAGIC);
 
 	if (av == NULL) {
 		VTAILQ_FOREACH_SAFE(s, &h->streams, list, s2) {
