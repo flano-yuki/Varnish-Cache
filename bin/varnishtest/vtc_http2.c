@@ -255,6 +255,7 @@ struct frame {
 	union {
 		struct {
 			uint32_t stream;
+			uint8_t  exclusive;
 			uint8_t  weight;
 		}		prio;
 		uint32_t	rst_err;
@@ -479,6 +480,11 @@ receive_frame(void *priv) {
 			AN(buf);
 
 			f->md.prio.stream = ntohl(*(uint32_t*)f->data);
+			if (f->md.prio.stream & (1 << 31))
+				f->md.prio.exclusive = 1;
+
+			f->md.prio.stream &= ~(1 << 31);
+
 			buf += 4;
 			f->md.prio.weight = *buf;
 			vtc_log(hp->vl, 3, "s%lu - prio->stream: %u", s->id, f->md.prio.stream);
@@ -661,6 +667,14 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	else if (!strcmp(spec, "prio.stream")) {
 		CHECK_LAST_FRAME(PRIORITY);
 		RETURN_BUFFED(f->md.prio.stream);
+	}
+	else if (!strcmp(spec, "prio.exclusive")) {
+		CHECK_LAST_FRAME(PRIORITY);
+		if (f->md.prio.exclusive)
+				snprintf(buf, 20, "true");
+			else
+				snprintf(buf, 20, "false");
+			return (buf);
 	}
 	else if (!strcmp(spec, "prio.weight")) {
 		CHECK_LAST_FRAME(PRIORITY);
@@ -1119,6 +1133,7 @@ cmd_txprio(CMD_ARGS)
 	uint32_t stid = 0;
 	struct frame f;
 	uint32_t weight = 0;
+	int exclusive = 0;
 	char buf[5];
 
 	(void)cmd;
@@ -1131,6 +1146,8 @@ cmd_txprio(CMD_ARGS)
 		if (!strcmp(*av, "-stream")) {
 			av++;
 			STRTOU32(stid, *av, p, vl, "-stream");
+		} else if (!strcmp(*av, "-exclusive")) {
+			exclusive = 1 << 31;
 		} else if (!strcmp(*av, "-weight")) {
 			av++;
 			STRTOU32(weight, *av, p, vl, "-weight");
@@ -1146,7 +1163,7 @@ cmd_txprio(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown txprio spec: %s\n", *av);
 
-	*(uint32_t *)buf = htonl(stid);
+	*(uint32_t *)buf = htonl(stid | exclusive);
 	buf[4] = weight & 0xff;
 	write_frame(s->hp, &f);
 }
