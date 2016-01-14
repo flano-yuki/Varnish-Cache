@@ -1399,7 +1399,7 @@ rxstuff(struct stream *s) {
 	}
 	clean_frame(s);
 	f = VTAILQ_LAST(&s->fq, fq_head);
-	VTAILQ_REMOVE(&s->fq, s->frame, list);
+	VTAILQ_REMOVE(&s->fq, f, list);
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
 
 	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
@@ -1441,11 +1441,11 @@ cmd_rxhdrs(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
+	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
-		CHKFRAME(s->frame->type, expect, rcv, "rxhdrs");
+		CHKFRAME(f->type, expect, rcv, "rxhdrs");
 		expect = TYPE_CONT;
 	}
 	s->frame = f;
@@ -1476,11 +1476,11 @@ cmd_rxcont(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(s->frame->flags | END_HEADERS))) {
+	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
-		CHKFRAME(s->frame->type, TYPE_CONT, rcv, "rxcont");
+		CHKFRAME(f->type, TYPE_CONT, rcv, "rxcont");
 	}
 	s->frame = f;
 }
@@ -1511,11 +1511,11 @@ cmd_rxdata(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(s->frame->flags | END_STREAM))) {
+	while (rcv++ < times || (loop && !(f->flags | END_STREAM))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
-		CHKFRAME(s->frame->type, TYPE_DATA, rcv, "rxhdata");
+		CHKFRAME(f->type, TYPE_DATA, rcv, "rxhdata");
 	}
 	s->frame = f;
 }
@@ -1535,8 +1535,6 @@ cmd_rxreqsp(CMD_ARGS)
 	f = rxstuff(s);
 	if (!f)
 		return;
-
-	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
 
 	rcv++;
 	CHKFRAME(f->type, TYPE_HEADERS, rcv, *av);
@@ -1566,7 +1564,7 @@ cmd_rxreqsp(CMD_ARGS)
 		(void)cmd; \
 		(void)av; \
 		CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC); \
-		if (!rxstuff(s)) \
+		if ((s->frame = rxstuff(s))) \
 				return; \
 		if (s->frame->type != TYPE_ ## upctype) \
 			vtc_log(vl, 0, "Received frame of type %d " \
