@@ -138,24 +138,6 @@ struct stream {
 	uint64_t		ws;
 
 	VTAILQ_HEAD(, frame)   fq;
-	union {
-		struct {
-			char data[9];
-			int ack;
-		}		ping;
-		struct {
-			uint32_t err;
-			uint32_t stream;
-			char	 *debug;
-		}		goaway;
-		struct {
-			uint32_t stream;
-			uint8_t  weight;
-		}		prio;
-		uint32_t	winup_size;
-		uint32_t	rst_err;
-		double settings[SETTINGS_MAX+1];
-	} md;
 
 	char			*body;
 	int			bodylen;
@@ -554,7 +536,7 @@ receive_frame(void *priv) {
 			vtc_log(hp->vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
 			vtc_log(hp->vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
 			if (f->md.goaway.debug)
-				vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, s->md.goaway.debug);
+				vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, f->md.goaway.debug);
 		} else 	if (f->type == TYPE_WINUP) {
 			uint32_t size;
 			if (f->size != 4)
