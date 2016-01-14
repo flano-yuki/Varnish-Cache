@@ -296,21 +296,10 @@ writeFrameHeader(char *buf, struct frame *f) {
 	buf[7] = (f->stid >>  8) & 0xff;
 	buf[8] = (f->stid      ) & 0xff;
 }
-/*
-static void
-free_frame_data(struct stream *s) {
-	if (!s->frame)
-		return;
-	if (s->frame->type == TYPE_GOAWAY)
-		free(s->md.goaway.debug);
-	memset(&s->md, 0, sizeof(s->md));
-	free(s->frame->data);
-	free(s->frame);
-	s->frame = NULL;
-}
-*/
+
 #define INIT_FRAME(f, ty, sz, id, fl) \
 do { \
+	f.magic = FRAME_MAGIC; \
 	f.type = TYPE_ ## ty; \
 	f.size = sz; \
 	f.stid = id; \
@@ -318,14 +307,27 @@ do { \
 	f.data = NULL; \
 } while(0)
 
-
-#define MAXFRAMESIZE 2048 * 1024
+static void
+clean_frame(struct stream *s) {
+	struct frame *f;
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	if (!s->frame)
+		return;
+	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
+	if (s->frame->type == TYPE_GOAWAY)
+		free(f->md.goaway.debug);
+	free(f->data);
+	free(f);
+	s->frame = NULL;
+}
 
 static void
 write_frame(struct http2 *hp, struct frame *f) {
 	ssize_t l;
 	const char *type;
 	char hdr[9];
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
 	writeFrameHeader(hdr, f);
 
 	if (f->type <= TYPE_MAX)
@@ -358,12 +360,13 @@ write_frame(struct http2 *hp, struct frame *f) {
  */
 static void *
 receive_frame(void *priv) {
-	struct http2 *hp = (struct http2 *)priv;
+	struct http2 *hp;
 	char hdr[9];
 	struct frame *f;
 	struct stream *s;
 	const char *type;
 
+	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
 		if (hp->wf == 0) {
@@ -594,6 +597,10 @@ static char *
 find_header(struct stream *s, char *k, int ks) {
 	struct hdrng *h = s->hdrs;
 	int n = s->nhdrs;
+
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	AN(k);
+
 	while (n--) {
 		if (ks == h->key.size  && !memcmp(h->key.ptr, k, ks))
 			return h->value.ptr;
@@ -602,15 +609,18 @@ find_header(struct stream *s, char *k, int ks) {
 	return (NULL);
 }
 
-	static const char *
+static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
-
 	uint32_t idx;
 	int n;
 	const struct hdrng *h;
 	struct frame *f = s->frame;
+
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	AN(spec);
 	AN(buf);
+
 	n = 0;
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
@@ -787,10 +797,12 @@ cmd_txframe(CMD_ARGS)
 	int i;
 	unsigned size = 0;
 	(void)cmd;
+
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
 	AN(av[1]);
+	AZ(av[2]);
+
 	q = av[1];
 	size = strlen(q)/2;
 	buf = malloc(size);
@@ -811,12 +823,15 @@ cmd_txframe(CMD_ARGS)
 	http_write(hp, 4, buf, size, "txframe");
 
 	AZ(pthread_mutex_unlock(&hp->mtx));
-	vtc_hexdump(hp->vl, 4, "txframe", (void *)buf, size);
+	vtc_hexdump(vl, 4, "txframe", (void *)buf, size);
 }
 
 static void
 clean_headers(struct stream *s) {
 	struct hdrng *h = s->hdrs;
+	
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+
 	while (s->nhdrs--) {
 		if (h->key.size)
 			free(h->key.ptr);
@@ -1044,15 +1059,12 @@ cmd_txdata(CMD_ARGS)
 static void
 cmd_txrst(CMD_ARGS)
 {
-	struct http2 *hp;
 	struct stream *s;
 	char *p;
 	uint32_t err;
 	struct frame f;
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
 	INIT_FRAME(f, RST, 4, s->id, 0);
 
@@ -1072,27 +1084,25 @@ cmd_txrst(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txrst spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown txrst spec: %s\n", *av);
 
 	err = htonl(err);
 	f.data = (void *)&err;
-	write_frame(hp, &f);
+	write_frame(s->hp, &f);
 }
 
 static void
 cmd_txprio(CMD_ARGS)
 {
-	struct http2 *hp;
 	struct stream *s;
 	char *p;
 	uint32_t stid = 0;
 	struct frame f;
 	uint32_t weight = 0;
 	char buf[5];
+
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
 	INIT_FRAME(f, PRIORITY, 5, s->id, 0);
 	f.data = (void *)buf;
@@ -1105,7 +1115,7 @@ cmd_txprio(CMD_ARGS)
 			av++;
 			STRTOU32(weight, *av, p, vl, "-weight");
 			if (weight >= 256) {
-				vtc_log(hp->vl, 0,
+				vtc_log(vl, 0,
 					"Weight must be a 8-bits integer "
 						"(found %s)", *av);
 				return;
@@ -1114,11 +1124,11 @@ cmd_txprio(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txprio spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown txprio spec: %s\n", *av);
 
 	*(uint32_t *)buf = htonl(stid);
 	buf[4] = weight & 0xff;
-	write_frame(hp, &f);
+	write_frame(s->hp, &f);
 }
 
 #define PUT_KV(vl, name, val, code) \
@@ -1135,20 +1145,20 @@ cmd_txprio(CMD_ARGS)
 static void
 cmd_txsettings(CMD_ARGS)
 {
-	struct http2 *hp;
 	struct stream *s;
+	struct http2 *hp;
 	char *p;
 	uint32_t val = 0;
 	struct frame f;
 	//TODO dynamic alloc
 	char buf[512];
 	char *cursor = buf;
-	(void)cmd;
-	memset(buf, 0, 512);
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 
+	(void)cmd;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
+
+	memset(buf, 0, 512);
 	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
 	f.data = buf;
 
@@ -1162,7 +1172,7 @@ cmd_txsettings(CMD_ARGS)
 			else if (!strcmp(*av, "true"))
 				*(uint32_t *)cursor = htonl(1);
 			else
-				vtc_log(hp->vl, 0, "Push parameter is either "
+				vtc_log(vl, 0, "Push parameter is either "
 						"\"true\" or \"false\", not %s",
 						*av);
 			cursor += sizeof(uint32_t);
@@ -1180,7 +1190,7 @@ cmd_txsettings(CMD_ARGS)
 			break;
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txsettings spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown txsettings spec: %s\n", *av);
 
 	write_frame(hp, &f);
 }
@@ -1195,16 +1205,13 @@ cmd_rxpush(CMD_ARGS)
 static void
 cmd_txping(CMD_ARGS)
 {
-	struct http2 *hp;
 	struct stream *s;
 	struct frame f;
 	char buf[8];
+
 	(void)cmd;
 	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
-
 	INIT_FRAME(f, PING, 8, s->id, 0);
 
 	while (*++av) {
@@ -1225,25 +1232,22 @@ cmd_txping(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown txping spec: %s\n", *av);
 	if (!f.data)
 		f.data = buf;
-	write_frame(hp, &f);
+	write_frame(s->hp, &f);
 }
 
 static void
 cmd_txgoaway(CMD_ARGS)
 {
-	struct http2 *hp;
 	struct stream *s;
 	char *p;
 	uint32_t err = 0;
 	uint32_t ls = 0;
 	struct frame f;
 	char buf[8];
+
 	(void)cmd;
-	f.data = buf;
-	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	memset(buf, 0, 8);
 
 	INIT_FRAME(f, GOAWAY, 8, s->id, 0);
 
@@ -1263,13 +1267,13 @@ cmd_txgoaway(CMD_ARGS)
 			++av;
 			STRTOU32(ls, *av, p, vl, "-laststream");
 			if (ls >= (1 << 31)) {
-				vtc_log(hp->vl, 0, "-laststream must be a 31-bits integer "
+				vtc_log(vl, 0, "-laststream must be a 31-bits integer "
 						"(found %s)", *av);
 			}
 		} else if (!strcmp(*av, "-debug")) {
 			++av;
 			if (f.data)
-				vtc_log(hp->vl, 0, "this frame already has debug data");
+				vtc_log(vl, 0, "this frame already has debug data");
 			f.size = 8 + strlen(*av);
 			f.data = malloc(f.size);
 			memcpy(f.data + 8, *av, f.size - 8);
@@ -1277,13 +1281,13 @@ cmd_txgoaway(CMD_ARGS)
 			break;
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txgoaway spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown txgoaway spec: %s\n", *av);
 
 	if (!f.data)
 		f.data = malloc(2);
 	((uint32_t*)f.data)[0] = htonl(ls);
 	((uint32_t*)f.data)[1] = htonl(err);
-	write_frame(hp, &f);
+	write_frame(s->hp, &f);
 	free(f.data);
 }
 
@@ -1296,17 +1300,17 @@ cmd_txwinup(CMD_ARGS)
 	struct frame f;
 	char buf[8];
 	uint32_t size = 0; 
+
 	(void)cmd;
-	f.data = buf;
-	memset(buf, 0, 8);
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
+	memset(buf, 0, 8);
 
 	AN(av[1]);
 	AN(av[2]);
 
 	INIT_FRAME(f, WINUP, 4, s->id, 0);
+	f.data = buf;
 
 	while (*++av) {
 		if (!strcmp(*av, "-size")) {
@@ -1316,12 +1320,12 @@ cmd_txwinup(CMD_ARGS)
 			break;	
 	}
 	if (*av != NULL)
-		vtc_log(hp->vl, 0, "Unknown txwinup spec: %s\n", *av);
+		vtc_log(vl, 0, "Unknown txwinup spec: %s\n", *av);
 
 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	if (s->id == 0)
-		s->hp->ws += size;
+		hp->ws += size;
 	s->ws += size;
 	AZ(pthread_mutex_unlock(&hp->mtx));
 
@@ -1332,6 +1336,8 @@ cmd_txwinup(CMD_ARGS)
 
 static int
 rxstuff(struct stream *s) {
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+
 	AZ(pthread_mutex_lock(&s->hp->mtx));
 	s->hp->wf++;
 	if (VTAILQ_EMPTY(&s->fq)) {
@@ -1342,6 +1348,7 @@ rxstuff(struct stream *s) {
 		AZ(pthread_mutex_unlock(&s->hp->mtx));
 		return (0);
 	}
+	clean_frame(s);
 	s->frame = VTAILQ_LAST(&s->fq, fq_head);
 	AN(s->frame);
 	VTAILQ_REMOVE(&s->fq, s->frame, list);
@@ -1367,6 +1374,7 @@ cmd_rxhdrs(CMD_ARGS)
 	int rcv = 0;
 	// XXX make it an enum
 	int expect = TYPE_HEADERS;
+
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
@@ -1397,6 +1405,7 @@ cmd_rxcont(CMD_ARGS)
 	int loop = 0;
 	int times = 1;
 	int rcv = 0;
+
 	(void)cmd;
 	(void)av;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -1428,6 +1437,7 @@ cmd_rxdata(CMD_ARGS)
 	int loop = 0;
 	int times = 1;
 	int rcv = 0;
+
 	(void)cmd;
 	(void)av;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -1450,37 +1460,42 @@ cmd_rxdata(CMD_ARGS)
 	}
 }
 
+/*TODO clean that CAST_OBJ_NOTNULL  non-sense*/
 static void
 cmd_rxreqsp(CMD_ARGS)
 {
 	struct stream *s;
+	struct frame *f;
 	int end_stream;
 	int rcv = 0;
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+
 	clean_headers(s);
 	if (!rxstuff(s))
 		return;
-	AN(s->frame);
+
+	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
+
 	rcv++;
-	CHKFRAME(s->frame->type, TYPE_HEADERS, rcv, *av);
+	CHKFRAME(f->type, TYPE_HEADERS, rcv, *av);
 
-	end_stream = s->frame->flags & END_STREAM;
+	end_stream = f->flags & END_STREAM;
 
-	while (!(s->frame->flags | END_HEADERS)) {
+	while (!(f->flags | END_HEADERS)) {
 		if (!rxstuff(s))
 			return;
-		AN(s->frame);
+		CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
 		rcv++;
-		CHKFRAME(s->frame->type, TYPE_CONT, rcv, *av);
+		CHKFRAME(f->type, TYPE_CONT, rcv, *av);
 	}
 
 	while (!end_stream && rxstuff(s)) {
-		AN(s->frame);
+		CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
 		rcv++;
-		CHKFRAME(s->frame->type, TYPE_DATA, rcv, *av);
-		end_stream = s->frame->flags & END_STREAM;
+		CHKFRAME(f->type, TYPE_DATA, rcv, *av);
+		end_stream = f->flags & END_STREAM;
 	}
 }
 
@@ -1694,7 +1709,6 @@ stream_new(const char *name, struct http2 *h)
 static void
 stream_delete(struct stream *s)
 {
-
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	free(s->spec);
 	free(s->name);
@@ -1709,7 +1723,6 @@ stream_delete(struct stream *s)
 static void
 stream_start(struct stream *s)
 {
-
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	vtc_log(s->hp->vl, 2, "Starting stream %p", s);
 	AZ(pthread_create(&s->tp, NULL, stream_thread, s));
@@ -1730,6 +1743,7 @@ stream_wait(struct stream *s)
 	AZ(pthread_join(s->tp, &res));
 	if (res != NULL)
 		vtc_log(s->hp->vl, 0, "Stream %lu returned \"%s\"", s->id, (char *)res);
+	clean_frame(s);
 	s->tp = 0;
 	s->running = 0;
 }
@@ -1741,7 +1755,6 @@ stream_wait(struct stream *s)
 static void
 stream_run(struct stream *s)
 {
-
 	stream_start(s);
 	stream_wait(s);
 }
@@ -1757,9 +1770,9 @@ cmd_stream(CMD_ARGS)
 {
 	struct stream *s, *s2;
 
-	struct http2 *h = (struct http2 *)priv;
 	(void)cmd;
 	(void)vl;
+	CAST_OBJ_NOTNULL(h, priv, HTTP@_MAGIC)
 
 	if (av == NULL) {
 		VTAILQ_FOREACH_SAFE(s, &h->streams, list, s2) {
@@ -1865,10 +1878,10 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	// kill the frame dispatcher 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	hp->running = 0;
-	pthread_cond_signal(&hp->cond);
+	AZ(pthread_cond_signal(&hp->cond));
 	AZ(pthread_mutex_unlock(&hp->mtx));
-
 	AZ(pthread_join(hp->tp, NULL));
+
 	destroyStmCtx(hp->inctx);
 	destroyStmCtx(hp->outctx);
 
