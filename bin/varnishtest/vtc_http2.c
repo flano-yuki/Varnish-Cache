@@ -254,6 +254,12 @@ struct frame {
 
 	union {
 		struct {
+			uint32_t stream;
+			uint8_t  weight;
+		}		prio;
+		uint32_t	rst_err;
+		double settings[SETTINGS_MAX+1];
+		struct {
 			char data[9];
 			int ack;
 		}		ping;
@@ -262,13 +268,7 @@ struct frame {
 			uint32_t stream;
 			char	 *debug;
 		}		goaway;
-		struct {
-			uint32_t stream;
-			uint8_t  weight;
-		}		prio;
 		uint32_t	winup_size;
-		uint32_t	rst_err;
-		double settings[SETTINGS_MAX+1];
 	} md;
 };
 
@@ -374,8 +374,7 @@ write_frame(struct http2 *hp, struct frame *f)
 	AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
-/* read a frame and pass it to the stream waiting on it.
- * If no stream is there to receive the frame, cond_wait until there is
+/* read a frame and queue it in the relevant stream, wait if not present yet.
  */
 static void *
 receive_frame(void *priv) {
@@ -389,6 +388,7 @@ receive_frame(void *priv) {
 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->running) {
+		/*no wanted frames? */
 		if (hp->wf == 0) {
 			AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
 			continue;
@@ -397,7 +397,6 @@ receive_frame(void *priv) {
 
 		if (!get_bytes(hp, hdr, 9)) {
 			vtc_log(hp->vl, 1, "could not get header");
-			AZ(pthread_mutex_unlock(&hp->mtx));
 			return (NULL);
 		}
 		ALLOC_OBJ(f, FRAME_MAGIC);
@@ -418,6 +417,7 @@ receive_frame(void *priv) {
 			get_bytes(hp, f->data, f->size);
 		}
 
+		/* is the corresponding stream waiting? */
 		s = NULL;
 		while (!s) {
 			VTAILQ_FOREACH(s, &hp->streams, list) {
@@ -429,7 +429,7 @@ receive_frame(void *priv) {
 			if (!hp->running)
 				return (NULL);
 		}
-
+		/* parse the frame according to it type, and fill the metada */
 		if (f->type == TYPE_DATA) {
 			if (!f->size) {
 				vtc_log(hp->vl, 4, "s%lu - no data", s->id);
@@ -1414,6 +1414,7 @@ cmd_rxhdrs(CMD_ARGS)
 	while (*++av) {
 		if (!strcmp(*av, "-some")) {
 			STRTOU32(times, *av, p, vl, "-some");
+			AN(times);
 		} else if (!strcmp(*av, "-all")) {
 			loop = 1;
 		} else
@@ -1771,7 +1772,7 @@ stream_start(struct stream *s)
 /**********************************************************************
  * Wait for stream thread to stop
  */
-
+//TODO clean ->fq too
 static void
 stream_wait(struct stream *s)
 {
