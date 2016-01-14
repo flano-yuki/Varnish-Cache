@@ -439,7 +439,20 @@ receive_frame(void *priv) {
 			if (!hp->running)
 				return (NULL);
 		}
-		if (f->type == TYPE_RST) {
+		if (f->type == TYPE_PRIORITY) {
+			char *buf;
+			if (f->size != 5)
+				vtc_log(hp->vl, 0, "Size should be 5, but isn't (%d)", f->size);
+
+			buf = f->data;
+			AN(buf);
+
+			f->md.prio.stream = ntohl(*(uint32_t*)f->data);
+			buf += 4;
+			f->md.prio.weight = *buf;
+			vtc_log(hp->vl, 3, "s%lu - prio->stream: %u", s->id, f->md.prio.stream);
+			vtc_log(hp->vl, 3, "s%lu - prio->weight: %u", s->id, f->md.prio.weight);
+		} if (f->type == TYPE_RST) {
 			uint32_t err;
 			char *buf;
 			if (f->size != 4)
@@ -500,7 +513,7 @@ receive_frame(void *priv) {
 }
 
 #define CHECK_LAST_FRAME(TYPE) \
-	if (!s->frame || s->frame->type != TYPE_ ## TYPE) { \
+	if (!f || f->type != TYPE_ ## TYPE) { \
 		vtc_log(s->hp->vl, 0, "Last frame was not of type " #TYPE); \
 	}
 
@@ -559,11 +572,11 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	}
 	else if (!strcmp(spec, "prio.stream")) {
 		CHECK_LAST_FRAME(PRIORITY);
-		RETURN_BUFFED(s->md.prio.stream);
+		RETURN_BUFFED(f->md.prio.stream);
 	}
 	else if (!strcmp(spec, "prio.weight")) {
 		CHECK_LAST_FRAME(PRIORITY);
-		RETURN_BUFFED(s->frame->md.prio.weight);
+		RETURN_BUFFED(f->md.prio.weight);
 	}
 	else if (!strcmp(spec, "rst.err")) {
 		CHECK_LAST_FRAME(RST);
@@ -1214,37 +1227,6 @@ cmd_txprio(CMD_ARGS)
 	write_frame(hp, &f, 4, "txprio");
 }
 
-static void
-cmd_rxprio(CMD_ARGS)
-{
-	struct frame *f;
-	struct stream *s;
-	char *buf;
-	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	wait_frame(s);
-	if (!s->frame) {
-		AZ(pthread_cond_signal(&s->cond));
-		return;
-	}
-	f = s->frame;
-
-	if (f->type != TYPE_PRIORITY)
-		vtc_log(vl, 0, "Received something that is not a priority (type=0x%x)", f->type);
-	if (f->size != 5)
-		vtc_log(vl, 0, "Size should be 5, but isn't (%d)", f->size);
-
-	buf = s->frame->data;
-	AN(buf);
-
-	s->md.prio.stream = ntohl(*(uint32_t*)f->data);
-	buf += 4;
-	s->md.prio.weight = *buf;
-
-	vtc_log(vl, 3, "s%lu - prio->stream: %u", s->id, s->md.prio.stream);
-	vtc_log(vl, 3, "s%lu - prio->weight: %u", s->id, s->md.prio.weight);
-	AZ(pthread_cond_signal(&s->cond));
-}
-
 #define PUT_KV(name, val, code) \
 	av++;\
 	val = strtoul(*av, &p, 0);\
@@ -1381,6 +1363,7 @@ rxstuff(struct stream *s, struct vtclog *vl, int type, char *fn) {
 		rxstuff(s, vl, TYPE_ ## upctype, "rx ## lctype"); \
 	}
 
+RXFUNC(prio,	PRIORITY)
 RXFUNC(rst,	RST)
 RXFUNC(settings,SETTINGS)
 RXFUNC(ping,	PING)
