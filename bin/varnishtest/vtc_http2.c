@@ -725,10 +725,8 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	} /* GENERIC FRAME */
 	else if (!strncmp(spec, "frame.", 6)) {
 		spec += 6;
-		if (!f) {
+		if (!f)
 			vtc_log(s->hp->vl, 0, "No frame received yet.");
-			return (NULL);
-		}
 		     if (!strcmp(spec, "data"))   { return (f->data); }
 		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
 		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
@@ -1151,12 +1149,10 @@ cmd_txprio(CMD_ARGS)
 		} else if (!strcmp(*av, "-weight")) {
 			av++;
 			STRTOU32(weight, *av, p, vl, "-weight");
-			if (weight >= 256) {
+			if (weight >= 256)
 				vtc_log(vl, 0,
 					"Weight must be a 8-bits integer "
 						"(found %s)", *av);
-				return;
-			}
 		} else
 			break;	
 	}
@@ -1266,9 +1262,8 @@ cmd_txping(CMD_ARGS)
 			av++;
 			if (f.data)
 				vtc_log(vl, 0, "this frame already has data");
-			if (strlen(*av) != 8) {
+			if (strlen(*av) != 8)
 				vtc_log(vl, 0, "data must be a 8-char string, found  (%s)", *av);
-			}
 			f.data = *av;
 		} else if (!strcmp(*av, "-ack")) {
 			f.flags |= 1;
@@ -1369,7 +1364,6 @@ cmd_txwinup(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown txwinup spec: %s\n", *av);
 
-
 	AZ(pthread_mutex_lock(&hp->mtx));
 	if (s->id == 0)
 		hp->ws += size;
@@ -1411,7 +1405,6 @@ rxstuff(struct stream *s) {
 		vtc_log(vl, 0, "Frame #%d for %s was of type %d" \
 				"instead of %d", \
 				rcv, func, rt, wt); \
-		return; \
 	}
 
 static void
@@ -1671,9 +1664,8 @@ cmd_fatal(CMD_ARGS)
 		hp->fatal = 0;
 	else if (!strcmp(av[0], "non-fatal"))
 		hp->fatal = -1;
-	else {
+	else
 		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
-	}
 }
 
 static const struct cmds stream_cmds[] = {
@@ -1745,10 +1737,9 @@ stream_new(const char *name, struct http2 *h)
 	s->ws = 0xffff;
 
 	STRTOU32(s->id, name, p, h->vl, "-some");
-	if (s->id >= (1 << 31)) {
+	if (s->id >= (1 << 31))
 		vtc_log(h->vl, 0, "Stream id must be a 31-bits integer "
 				"(found %s)", name);
-	}
 
 	CHECK_OBJ_NOTNULL(h, HTTP2_MAGIC);
 	s->hp = h;
