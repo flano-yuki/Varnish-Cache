@@ -73,11 +73,15 @@ pop_header(struct stm_ctx *ctx) {
 void
 push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 	const struct hdrng *ih;
+	struct dynhdr *h;
+	int size;
+
 	assert(ctx->size <= ctx->maxsize);
-	assert(oh);
+	AN(oh);
+
 	if (!ctx->maxsize)
 		return;
-	int size = oh->value.size + 32;
+	size = oh->value.size + 32;
 	if (oh->key.ptr)
 		size += oh->key.size;
 	else {
@@ -87,7 +91,9 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 		size += ih->key.size;
 	}
 
-	struct dynhdr *h = malloc(sizeof(*h));
+	h = malloc(sizeof(*h));
+	AN(h);
+	h->header.t = HdrIdx;
 
 	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize - ctx->size < size)
 		pop_header(ctx);
@@ -108,7 +114,6 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 			AN(h->header.key.ptr);
 			memcpy(h->header.key.ptr, ih->key.ptr, ih->key.size + 1);
 		}
-
 
 		h->header.value.size = oh->value.size;
 		h->header.value.ptr = malloc(oh->value.size + 1);
