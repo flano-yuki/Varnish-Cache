@@ -141,7 +141,7 @@ struct stream {
 
 	char			*body;
 	int			bodylen;
-	struct hdrng		hdrs[MAX_HDR];		
+	struct hpk_hdr		hdrs[MAX_HDR];
 	int			nhdrs;
 };
 
@@ -161,8 +161,8 @@ struct http2 {
 	VTAILQ_HEAD(, stream)   streams;
 	pthread_mutex_t		mtx;
 	pthread_cond_t          cond;
-	struct stm_ctx		*outctx;
-	struct stm_ctx		*inctx;
+	struct hpk_ctx		*outctx;
+	struct hpk_ctx		*inctx;
 	uint64_t		ws;
 };
 
@@ -453,24 +453,24 @@ receive_frame(void *priv) {
 
 			vtc_log(hp->vl, 3, "s%lu - data: %s", s->id, f->data);
 		} else if (f->type == TYPE_HEADERS || f->type == TYPE_CONT) {
-			struct HdrIter *iter;
-			enum HdrRet r;
-			iter = newHdrIter(s->hp->inctx, f->data, f->size);
+			struct hpk_iter *iter;
+			enum hpk_result r;
+			iter = HPK_NewIter(s->hp->inctx, f->data, f->size);
 
 			while (s->nhdrs < MAX_HDR) {
-				r = decNextHdr(iter, s->hdrs + s->nhdrs);
-				if (r == HdrErr )
+				r = HPK_DecHdr(iter, s->hdrs + s->nhdrs);
+				if (r == hpk_err )
 					break;
 				vtc_log(hp->vl, 4, "s%lu - header: %s : %s (%d)",
 						s->id, s->hdrs[s->nhdrs].key.ptr, s->hdrs[s->nhdrs].value.ptr, s->nhdrs);
 				s->nhdrs++;
-				if (r == HdrDone)
+				if (r == hpk_done)
 					break;
 			}
 			//XXX document too many headers errors
-			if (r != HdrDone)
+			if (r != hpk_done)
 				vtc_log(hp->vl, 0, "Header decoding failed");
-			destroyHdrIter(iter);
+			HPK_FreeIter(iter);
 		} else if (f->type == TYPE_PRIORITY) {
 			char *buf;
 			if (f->size != 5)
@@ -525,7 +525,7 @@ receive_frame(void *priv) {
 				i += 4;
 
 				if (t == 1 )
-					resizeTable(s->hp->outctx, v);
+					HPK_ResizeTbl(s->hp->outctx, v);
 
 				vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 			}
@@ -621,7 +621,7 @@ receive_frame(void *priv) {
 
 static char *
 find_header(struct stream *s, char *k, int ks) {
-	struct hdrng *h = s->hdrs;
+	struct hpk_hdr *h = s->hdrs;
 	int n = s->nhdrs;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
@@ -640,7 +640,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
 	uint32_t idx;
 	int n;
-	const struct hdrng *h;
+	const struct hpk_hdr *h;
 	struct frame *f = s->frame;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
@@ -745,29 +745,29 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	}
 	else if (1 == sscanf(spec, "intable[%u].key%n", &idx, &n) &&
 			spec[n] == '\0') {
-		h = getHeader(s->hp->inctx, idx + 61);
+		h = HPK_GetHdr(s->hp->inctx, idx + 61);
 		return (h ? h->key.ptr : NULL);
 	}
 	else if (1 == sscanf(spec, "intable[%u].value%n", &idx, &n) &&
 			spec[n] == '\0') {
-		h = getHeader(s->hp->inctx, idx + 61);
+		h = HPK_GetHdr(s->hp->inctx, idx + 61);
 		return (h ? h->value.ptr : NULL);
 	}
 	else if (!strcmp(spec, "intable.size")) {
-		RETURN_BUFFED(getTblSize(s->hp->inctx));
+		RETURN_BUFFED(HPK_GetTblSize(s->hp->inctx));
 	}
 	else if (1 == sscanf(spec, "outtable[%u].key%n", &idx, &n) &&
 			spec[n] == '\0') {
-		h = getHeader(s->hp->outctx, idx + 61);
+		h = HPK_GetHdr(s->hp->outctx, idx + 61);
 		return (h ? h->key.ptr : NULL);
 	}
 	else if (1 == sscanf(spec, "outtable[%u].value%n", &idx, &n) &&
 			spec[n] == '\0') {
-		h = getHeader(s->hp->outctx, idx + 61);
+		h = HPK_GetHdr(s->hp->outctx, idx + 61);
 		return (h ? h->value.ptr : NULL);
 	}
 	else if (!strcmp(spec, "outtable.size")) {
-		RETURN_BUFFED(getTblSize(s->hp->outctx));
+		RETURN_BUFFED(HPK_GetTblSize(s->hp->outctx));
 	}
 	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
@@ -862,7 +862,7 @@ cmd_txframe(CMD_ARGS)
 
 static void
 clean_headers(struct stream *s) {
-	struct hdrng *h = s->hdrs;
+	struct hpk_hdr *h = s->hdrs;
 	
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 
@@ -885,7 +885,7 @@ clean_headers(struct stream *s) {
 	hdr.value.ptr = strdup(v); \
 	AN(hdr.value.ptr); \
 	hdr.value.size = strlen(v); \
-	encNextHdr(iter, &hdr); \
+	HPK_EncHdr(iter, &hdr); \
 	free(hdr.key.ptr);\
 	free(hdr.value.ptr); \
 }
@@ -899,11 +899,11 @@ cmd_tx11obj(CMD_ARGS)
 	int req_done = 1;
 	int url_done = 1;
 	char buf[1024*2048];
-	struct HdrIter *iter;
+	struct hpk_iter *iter;
 	struct frame f;
 	char *body = NULL;
 	/*XXX: do we need a better api? yes we do */
-	struct hdrng hdr;
+	struct hpk_hdr hdr;
 	char *cmd_str = *av;
 	char *p;
 	(void)cmd;
@@ -923,9 +923,9 @@ cmd_tx11obj(CMD_ARGS)
 		}
 	}
 
-	iter = newHdrIter(s->hp->outctx, buf, 1024*2048);
+	iter = HPK_NewIter(s->hp->outctx, buf, 1024*2048);
 	while (*++av) {
-		hdr.t = HdrNot;
+		hdr.t = hpk_not;
 		hdr.i = 0;
 		hdr.key.huff = 0;
 		hdr.key.ptr = NULL;
@@ -954,15 +954,15 @@ cmd_tx11obj(CMD_ARGS)
 		} else if (!strcmp(*av, "-idxHdr")) {
 			AN(++av);
 			STRTOU32(hdr.i, *av, p, vl, "-idxHdr");
-			encNextHdr(iter, &hdr);
+			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-litIdxHdr")) {
 			av++;
 			if (!strcmp(*av, "inc")) {
-				hdr.t = HdrInc;
+				hdr.t = hpk_inc;
 			} else if (!strcmp(*av, "not")) {
-				hdr.t = HdrNot;
+				hdr.t = hpk_not;
 			} else if (!strcmp(*av, "never")) {
-				hdr.t = HdrNever;
+				hdr.t = hpk_never;
 			} else
 				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
 			av++;
@@ -980,15 +980,15 @@ cmd_tx11obj(CMD_ARGS)
 			hdr.key.size = 0;
 			hdr.value.ptr = *av;
 			hdr.value.size = strlen(*av);
-			encNextHdr(iter, &hdr);
+			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-litHdr")) {
 			av++;
 			if (!strcmp(*av, "inc")) {
-				hdr.t = HdrInc;
+				hdr.t = hpk_inc;
 			} else if (!strcmp(*av, "not")) {
-				hdr.t = HdrNot;
+				hdr.t = hpk_not;
 			} else if (!strcmp(*av, "never")) {
-				hdr.t = HdrNever;
+				hdr.t = hpk_never;
 			} else
 				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
 
@@ -1014,7 +1014,7 @@ cmd_tx11obj(CMD_ARGS)
 			hdr.value.ptr = *av;
 			hdr.value.size = strlen(*av);
 			vtc_log(vl, 4,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
-			encNextHdr(iter, &hdr);
+			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
 			body = av[1];
@@ -1031,7 +1031,7 @@ cmd_tx11obj(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(s->hp->vl, 0, "Unknown %s spec: %s\n", cmd_str, *av);
 
-	hdr.t = HdrNot;
+	hdr.t = hpk_not;
 	hdr.i = 0;
 	hdr.key.huff = 0;
 	hdr.value.huff = 0;
@@ -1043,9 +1043,9 @@ cmd_tx11obj(CMD_ARGS)
 	if (!req_done)
 		ENC(hdr, ":method", "GET");
 
-	f.size = getHdrIterLen(iter);
+	f.size = gethpk_iterLen(iter);
 	f.data = buf;	
-	destroyHdrIter(iter);
+	HPK_FreeIter(iter);
 	write_frame(s->hp, &f);
 
 	if (!body)
@@ -1217,7 +1217,7 @@ cmd_txsettings(CMD_ARGS)
 		}
 		else if (!strcmp(*av, "-hdrtbl")) {
 			PUT_KV(vl, hdrtbl, val, 0x1);
-			resizeTable(s->hp->inctx, val);
+			HPK_ResizeTbl(s->hp->inctx, val);
 		}
 		else if (!strcmp(*av, "-maxstreams")) {
 			PUT_KV(vl, maxstreams, val, 0x3);
@@ -1912,8 +1912,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	} else  {
 		cmd_http_txpri(NULL, hp, NULL, vl);
 	}
-	hp->inctx = initStmCtx(4096);
-	hp->outctx = initStmCtx(4096);
+	hp->inctx = HPK_NewCtx(4096);
+	hp->outctx = HPK_NewCtx(4096);
 	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
 
 	if (!nosettings) {
@@ -1941,8 +1941,8 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	AZ(pthread_mutex_unlock(&hp->mtx));
 	AZ(pthread_join(hp->tp, NULL));
 
-	destroyStmCtx(hp->inctx);
-	destroyStmCtx(hp->outctx);
+	HPK_FreeCtx(hp->inctx);
+	HPK_FreeCtx(hp->outctx);
 
 	retval = hp->fd;
 	free(hp);

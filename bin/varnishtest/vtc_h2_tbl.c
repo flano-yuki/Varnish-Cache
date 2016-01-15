@@ -15,8 +15,8 @@
 #include "vtc_h2_stattbl.h"
 #undef STAT_HDRS
 
-struct hdrng sttbl[] = {
-	{{NULL, 0}, {NULL, 0}, HdrIdx, 0},
+struct hpk_hdr sttbl[] = {
+	{{NULL, 0}, {NULL, 0}, hpk_idx, 0},
 #define STAT_HDRS(j, k, v) \
 { \
 	.key = { \
@@ -27,23 +27,23 @@ struct hdrng sttbl[] = {
 		.ptr = value_ ## j, \
 		.size = sizeof(v) - 1 \
 	}, \
-	.t = HdrIdx, \
+	.t = hpk_idx, \
 	.i = j, \
 },
 #include "vtc_h2_stattbl.h"
 #undef STAT_HDRS
 };
 
-struct stm_ctx {
-	const struct hdrng *sttbl;
+struct hpk_ctx {
+	const struct hpk_hdr *sttbl;
 	struct dynamic_table      dyntbl;
 	int maxsize;
 	int size;
 };
 
 
-struct HdrIter *newHdrIter(struct stm_ctx *ctx, char *buf, int size) {
-	struct HdrIter *iter = malloc(sizeof(*iter));
+struct hpk_iter *HPK_NewIter(struct hpk_ctx *ctx, char *buf, int size) {
+	struct hpk_iter *iter = malloc(sizeof(*iter));
 	assert(iter);
 	assert(ctx);
 	assert(buf);
@@ -55,12 +55,12 @@ struct HdrIter *newHdrIter(struct stm_ctx *ctx, char *buf, int size) {
 	return (iter);
 }
 
-void destroyHdrIter(struct HdrIter *iter) {
+void HPK_FreeIter(struct hpk_iter *iter) {
 	free(iter);
 }
 
 static void
-pop_header(struct stm_ctx *ctx) {
+pop_header(struct hpk_ctx *ctx) {
 	assert(!VTAILQ_EMPTY(&ctx->dyntbl));
 	struct dynhdr *h = VTAILQ_LAST(&ctx->dyntbl, dynamic_table);
 	VTAILQ_REMOVE(&ctx->dyntbl, h, list);
@@ -71,8 +71,8 @@ pop_header(struct stm_ctx *ctx) {
 }
 
 void
-push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
-	const struct hdrng *ih;
+push_header (struct hpk_ctx *ctx, const struct hpk_hdr *oh) {
+	const struct hpk_hdr *ih;
 	struct dynhdr *h;
 	int size;
 
@@ -86,14 +86,14 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 		size += oh->key.size;
 	else {
 		AN(oh->i);
-		ih = getHeader(ctx, oh->i);
+		ih = HPK_GetHdr(ctx, oh->i);
 		AN(ih);
 		size += ih->key.size;
 	}
 
 	h = malloc(sizeof(*h));
 	AN(h);
-	h->header.t = HdrIdx;
+	h->header.t = hpk_idx;
 
 	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize - ctx->size < size)
 		pop_header(ctx);
@@ -106,7 +106,7 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 			memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size + 1);
 		} else {
 			AN(oh->i);
-			ih = getHeader(ctx, oh->i);
+			ih = HPK_GetHdr(ctx, oh->i);
 			AN(ih);
 
 			h->header.key.size = ih->key.size;
@@ -126,16 +126,16 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 
 }
 
-enum HdrRet
-resizeTable(struct stm_ctx *ctx, uint32_t num) {
+enum hpk_result
+HPK_ResizeTbl(struct hpk_ctx *ctx, uint32_t num) {
 	ctx->maxsize = num;
 	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize < ctx->size)
 		pop_header(ctx);
-	return (HdrDone);
+	return (hpk_done);
 }
 
 static const struct txt *
-tbl_get_field(struct stm_ctx *ctx, uint32_t index, int key) {
+tbl_get_field(struct hpk_ctx *ctx, uint32_t index, int key) {
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
@@ -161,17 +161,17 @@ tbl_get_field(struct stm_ctx *ctx, uint32_t index, int key) {
 }
 
 const struct txt *
-tbl_get_key(struct stm_ctx *ctx, uint32_t index) {
+tbl_get_key(struct hpk_ctx *ctx, uint32_t index) {
 	return (tbl_get_field(ctx, index, 1));
 }
 
 const struct txt *
-tbl_get_value(struct stm_ctx *ctx, uint32_t index) {
+tbl_get_value(struct hpk_ctx *ctx, uint32_t index) {
 	return (tbl_get_field(ctx, index, 0));
 }
 
-const struct hdrng *
-getHeader(struct stm_ctx *ctx, uint32_t index) {
+const struct hpk_hdr *
+HPK_GetHdr(struct hpk_ctx *ctx, uint32_t index) {
 	uint32_t oi = index;
 	struct dynhdr *dh;
 	assert(ctx);
@@ -192,12 +192,12 @@ getHeader(struct stm_ctx *ctx, uint32_t index) {
 }
 
 uint32_t
-getTblSize(struct stm_ctx *ctx) {
+HPK_GetTblSize(struct hpk_ctx *ctx) {
 	return ctx->size;
 }
 
 void
-dump_dyn_tbl(struct stm_ctx *ctx) {
+dump_dyn_tbl(struct hpk_ctx *ctx) {
 	int i = 0;
 	printf("DUMPING %d/%d\n", ctx->size, ctx->maxsize);
 	struct dynhdr *dh;
@@ -207,8 +207,8 @@ dump_dyn_tbl(struct stm_ctx *ctx) {
 	printf("DONE\n");
 }
 
-struct stm_ctx *initStmCtx(int maxsize) {
-	struct stm_ctx *ctx = calloc(1, sizeof(*ctx));
+struct hpk_ctx *HPK_NewCtx(int maxsize) {
+	struct hpk_ctx *ctx = calloc(1, sizeof(*ctx));
 	assert(ctx);
 	ctx->sttbl = sttbl;
 	ctx->maxsize = maxsize;
@@ -216,7 +216,7 @@ struct stm_ctx *initStmCtx(int maxsize) {
 	return (ctx);
 }
 
-void destroyStmCtx(struct stm_ctx *ctx) {
+void HPK_FreeCtx(struct hpk_ctx *ctx) {
 
 	while(!VTAILQ_EMPTY(&ctx->dyntbl))
 		pop_header(ctx);

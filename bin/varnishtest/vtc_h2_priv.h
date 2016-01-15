@@ -1,25 +1,25 @@
 #include "vqueue.h"
 
-#define ITER_DONE(iter) (iter->buf == iter->end ? HdrDone : HdrMore)
+#define ITER_DONE(iter) (iter->buf == iter->end ? hpk_done : hpk_more)
 
 struct dynhdr {
-	struct hdrng header;
+	struct hpk_hdr header;
 	VTAILQ_ENTRY(dynhdr)      list;
 };
 
 VTAILQ_HEAD(dynamic_table,dynhdr);
 
-struct HdrIter {
-	struct stm_ctx *ctx;
+struct hpk_iter {
+	struct hpk_ctx *ctx;
 	char *orig;
 	char *buf;
 	char *end;
 };
 
 const struct txt *
-tbl_get_key(struct stm_ctx *ctx, uint32_t index);
+tbl_get_key(struct hpk_ctx *ctx, uint32_t index);
 
 const struct txt *
-tbl_get_value(struct stm_ctx *ctx, uint32_t index);
+tbl_get_value(struct hpk_ctx *ctx, uint32_t index);
 void
-push_header (struct stm_ctx *ctx, const struct hdrng *h);
+push_header (struct hpk_ctx *ctx, const struct hpk_hdr *h);

@@ -24,7 +24,7 @@ static struct symbol coding_table[] = {
 struct symbol *EOS = &coding_table[256];
 
 static int
-huf_decode(char *str, int nm, struct HdrIter *iter, int size) {
+huf_decode(char *str, int nm, struct hpk_iter *iter, int size) {
 	int cursor = 0;
 	int len = 0;
 	size *= 8;
@@ -80,7 +80,7 @@ huf_decode(char *str, int nm, struct HdrIter *iter, int size) {
 }
 
 static int
-huf_encode(struct HdrIter *iter, char *str, int size) {
+huf_encode(struct hpk_iter *iter, char *str, int size) {
 	short r, s;
 	int v;
 	int l = 0;
@@ -129,8 +129,8 @@ huf_simulate(char *str, int size, int huff) {
 	return ((len+7)/8);
 }
 
-static enum HdrRet
-num_decode(uint32_t *result, struct HdrIter *iter, uint8_t prefix) {
+static enum hpk_result
+num_decode(uint32_t *result, struct hpk_iter *iter, uint8_t prefix) {
 	uint8_t shift = 0;
 
 	assert(iter->buf < iter->end);
@@ -146,10 +146,10 @@ num_decode(uint32_t *result, struct HdrIter *iter, uint8_t prefix) {
 	do {
 		iter->buf++;
 		if (iter->end == iter->buf)
-			return (HdrErr);
+			return (hpk_err);
 		/* check for overflow */
 		if ((UINT32_MAX - *result) >> shift < (*iter->buf & 0x7f))
-			return (HdrErr);
+			return (hpk_err);
 
 		*result += (uint32_t)(*iter->buf & 0x7f) << shift;
 		shift += 7;
@@ -159,8 +159,8 @@ num_decode(uint32_t *result, struct HdrIter *iter, uint8_t prefix) {
 	return (ITER_DONE(iter));
 }
 
-static enum HdrRet
-num_encode(struct HdrIter *iter, uint8_t prefix, uint32_t num) {
+static enum hpk_result
+num_encode(struct hpk_iter *iter, uint8_t prefix, uint32_t num) {
 	assert(prefix);
 	assert(prefix <= 8);
 	assert(iter->buf < iter->end);
@@ -172,14 +172,14 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint32_t num) {
 		*iter->buf++ |= num;
 		return (ITER_DONE(iter));
 	} else if (iter->end - iter->buf < 2)
-		return (HdrErr);
+		return (hpk_err);
 
 	iter->buf[0] |= pmax;
 	num -= pmax;
 	do {
 		iter->buf++;
 		if (iter->end == iter->buf)
-			return (HdrErr);
+			return (hpk_err);
 		*iter->buf = num % 128;
 		*iter->buf |= 0x80;
 		num /= 128;
@@ -188,8 +188,8 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint32_t num) {
 	return (ITER_DONE(iter));
 }
 
-static enum HdrRet
-str_encode(struct HdrIter *iter, struct txt *t) {
+static enum hpk_result
+str_encode(struct hpk_iter *iter, struct txt *t) {
 	int slen = huf_simulate(t->ptr, t->size, t->huff);
 	assert(iter->buf < iter->end);
 	if (t->huff)
@@ -197,11 +197,11 @@ str_encode(struct HdrIter *iter, struct txt *t) {
 	else
 		*iter->buf = 0;
 
-	if (HdrErr == num_encode(iter, 7, slen))
-		return (HdrErr);
+	if (hpk_err == num_encode(iter, 7, slen))
+		return (hpk_err);
 
 	if (slen > iter->end - iter->buf)
-		return (HdrErr);
+		return (hpk_err);
 
 	if (t->huff) {
 		return (huf_encode(iter, t->ptr, t->size));
@@ -212,23 +212,23 @@ str_encode(struct HdrIter *iter, struct txt *t) {
 	}
 }
 
-static enum HdrRet
-str_decode(struct HdrIter *iter, struct txt *t) {
+static enum hpk_result
+str_decode(struct hpk_iter *iter, struct txt *t) {
 	uint32_t num;
 	int huff;
 	assert(iter->buf < iter->end);
 	huff = (*iter->buf & 0x80);
-	if (HdrMore != num_decode(&num, iter, 7))
-		return (HdrErr);
+	if (hpk_more != num_decode(&num, iter, 7))
+		return (hpk_err);
 	if (num > iter->end - iter->buf)
-		return (HdrErr);
+		return (hpk_err);
 	if (huff) { /*Huffman encoding */
 		t->ptr = malloc((num * 8) / 5 + 1);
 		AN(t->ptr);
 		num = huf_decode(t->ptr, (num * 8) / 5, iter, num);
 		if (!num) {
 			free(t->ptr);
-			return (HdrErr);
+			return (hpk_err);
 		}
 		t->huff = 1;
 		/* XXX: do we care? */
@@ -258,12 +258,12 @@ txtcpy(struct txt *to, const struct txt *from) {
 	to->size = from->size;
 }
 
-int getHdrIterLen(struct HdrIter *iter) {
+int gethpk_iterLen(struct hpk_iter *iter) {
 	return (iter->buf - iter->orig);
 }
 
-enum HdrRet
-decNextHdr(struct HdrIter *iter, struct hdrng *header) {
+enum hpk_result
+HPK_DecHdr(struct hpk_iter *iter, struct hpk_hdr *header) {
 	int pref = 0;
 	const struct txt *t;
 	uint32_t num;
@@ -272,101 +272,101 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 	assert(iter->buf < iter->end);
 	/* Indexed Header Field */
 	if (*iter->buf & 128) {
-		header->t = HdrIdx;
-		if (HdrErr == num_decode(&num, iter, 7))
-			return (HdrErr);
+		header->t = hpk_idx;
+		if (hpk_err == num_decode(&num, iter, 7))
+			return (hpk_err);
 
 		if (num) { /* indexed key and value*/
 			t = tbl_get_key(iter->ctx, num);
 			if (!t)
-				return (HdrErr);
+				return (hpk_err);
 			txtcpy(&header->key, t);
 
 			t = tbl_get_value(iter->ctx, num);
 			if (!t) {
 				free(header->key.ptr);
-				return (HdrErr);
+				return (hpk_err);
 			}
 
 			txtcpy(&header->value, t);
 
 			if (iter->buf < iter->end)
-				return (HdrMore);
+				return (hpk_more);
 			else
-				return (HdrDone);
+				return (hpk_done);
 		} else
-			return (HdrErr);
+			return (hpk_err);
 
 	}
 	/* Literal Header Field with Incremental Indexing */
 	else if (*iter->buf >> 6 == 1) {
-		header->t = HdrInc;
+		header->t = hpk_inc;
 		pref = 6;
 		must_index = 1;
 	}
 	/* Literal Header Field without Indexing */
 	else if (*iter->buf >> 4 == 0) {
-		header->t = HdrNot;
+		header->t = hpk_not;
 		pref = 4;
 	}
 	/* Literal Header Field never Indexed */
 	else if (*iter->buf >> 4 == 1) {
-		header->t = HdrNever;
+		header->t = hpk_never;
 		pref = 4;
 	}
 	/* Dynamic Table Size Update */
 	/* XXX if under max allowed value */
 	else if (*iter->buf >> 5 == 1) {
-		if (HdrDone != num_decode(&num, iter, 5))
-			return (HdrErr);		
-		return resizeTable(iter->ctx, num);
+		if (hpk_done != num_decode(&num, iter, 5))
+			return (hpk_err);
+		return HPK_ResizeTbl(iter->ctx, num);
 	} else {
-		return (HdrErr);
+		return (hpk_err);
 	}
 
 	assert(pref);
-	if (HdrMore != num_decode(&num, iter, pref))
-		return (HdrErr);
+	if (hpk_more != num_decode(&num, iter, pref))
+		return (hpk_err);
 
 	header->i = num;
 	if (num) { /* indexed key */
 		t = tbl_get_key(iter->ctx, num);
 		if (!t)
-			return (HdrErr);
+			return (hpk_err);
 		txtcpy(&header->key, t);
 	} else {
-		if (HdrMore != str_decode(iter, &header->key))
-			return (HdrErr);
+		if (hpk_more != str_decode(iter, &header->key))
+			return (hpk_err);
 	}
 
-	if (HdrErr == str_decode(iter, &header->value))
-		return (HdrErr);
+	if (hpk_err == str_decode(iter, &header->value))
+		return (hpk_err);
 
 	if (must_index)
 		push_header(iter->ctx, header);
 	return (ITER_DONE(iter));
 }
 
-enum HdrRet
-encNextHdr(struct HdrIter *iter, struct hdrng *h) {
+enum hpk_result
+HPK_EncHdr(struct hpk_iter *iter, struct hpk_hdr *h) {
 	int pref;
 	int must_index = 0;
-	enum HdrRet ret;
+	enum hpk_result ret;
 	switch (h->t) {
-		case HdrIdx:
+		case hpk_idx:
 			*iter->buf = 0x80;
 			num_encode(iter, 7, h->i);
 			return (ITER_DONE(iter));
-		case HdrInc:
+		case hpk_inc:
 			*iter->buf = 0x40;
 			pref = 6;
 			must_index = 1;
 			break;
-		case HdrNot:
+		case hpk_not:
 			*iter->buf = 0x00;
 			pref = 4;
 			break;
-		case HdrNever:
+		case hpk_never:
 			*iter->buf = 0x10;
 			pref = 4;
 			break;
@@ -374,16 +374,16 @@ encNextHdr(struct HdrIter *iter, struct hdrng *h) {
 			INCOMPL();
 	}
 	if (h->i) {
-		if (HdrMore != num_encode(iter, pref, h->i))
-			return (HdrErr);
+		if (hpk_more != num_encode(iter, pref, h->i))
+			return (hpk_err);
 	} else {
 		iter->buf++;
-		if (HdrMore != str_encode(iter, &h->key))
-			return (HdrErr);
+		if (hpk_more != str_encode(iter, &h->key))
+			return (hpk_err);
 	}
 	ret = str_encode(iter, &h->value);
-	if (ret == HdrErr)
-		return (HdrErr);
+	if (ret == hpk_err)
+		return (hpk_err);
 	if (must_index)
 		push_header(iter->ctx, h);
 	return (ret);

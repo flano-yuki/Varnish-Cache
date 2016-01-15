@@ -1,16 +1,16 @@
 #include <stdint.h>
 
-enum HdrRet{
-	HdrMore = 0,
-	HdrDone,
-	HdrErr,
+enum hpk_result{
+	hpk_more = 0,
+	hpk_done,
+	hpk_err,
 };
 
-enum HdrType {
-	HdrIdx = 0,
-	HdrInc,
-	HdrNot,
-	HdrNever,
+enum hpk_indexed {
+	hpk_idx = 0,
+	hpk_inc,
+	hpk_not,
+	hpk_never,
 };
 
 struct txt {
@@ -19,41 +19,42 @@ struct txt {
 	int huff;
 };
 
-struct hdrng {
+struct hpk_hdr {
 	struct txt key;
 	struct txt value;
-	enum HdrType t;
+	enum hpk_indexed t;
 	int i;
 };
 
-struct stm_ctx;
-struct HdrIter;
+struct hpk_ctx;
+struct hpk_iter;
 
-struct stm_ctx *
-initStmCtx(int tblsize);
+struct hpk_ctx *
+HPK_NewCtx(int tblsize);
 void
-destroyStmCtx(struct stm_ctx *ctx);
+HPK_FreeCtx(struct hpk_ctx *ctx);
 
-struct HdrIter *
-newHdrIter(struct stm_ctx *ctx, char *buf, int size);
-enum HdrRet
-decNextHdr(struct HdrIter *iter, struct hdrng *header);
-enum HdrRet
-encNextHdr(struct HdrIter *iter, struct hdrng *header);
+struct hpk_iter *
+HPK_NewIter(struct hpk_ctx *ctx, char *buf, int size);
 void
-destroyHdrIter(struct HdrIter *iter);
+HPK_FreeIter(struct hpk_iter *iter);
 
-int getHdrIterLen(struct HdrIter *iter);
+enum hpk_result
+HPK_DecHdr(struct hpk_iter *iter, struct hpk_hdr *header);
+enum hpk_result
+HPK_EncHdr(struct hpk_iter *iter, struct hpk_hdr *header);
 
-enum HdrRet
-resizeTable(struct stm_ctx *ctx, uint32_t num);
+int gethpk_iterLen(struct hpk_iter *iter);
 
-const struct hdrng *
-getHeader(struct stm_ctx *ctx, uint32_t index);
+enum hpk_result
+HPK_ResizeTbl(struct hpk_ctx *ctx, uint32_t num);
+
+const struct hpk_hdr *
+HPK_GetHdr(struct hpk_ctx *ctx, uint32_t index);
 
 uint32_t
-getTblSize(struct stm_ctx *ctx);
+HPK_GetTblSize(struct hpk_ctx *ctx);
 
 /* DEBUG */
 void
-dump_dyn_tbl(struct stm_ctx *ctx);
+dump_dyn_tbl(struct hpk_ctx *ctx);
