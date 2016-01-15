@@ -170,6 +170,7 @@ tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
 
 const struct hdrng *
 getHeader(struct stm_ctx *ctx, uint32_t index) {
+	uint32_t oi = index;
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
@@ -181,9 +182,10 @@ getHeader(struct stm_ctx *ctx, uint32_t index) {
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
 		if (!index--)
 			break;
-	if (index && dh)
+	if (index && dh) {
+		dh->header.i = oi;
 		return (&dh->header);
-	else
+	} else
 		return (NULL);
 }
 
