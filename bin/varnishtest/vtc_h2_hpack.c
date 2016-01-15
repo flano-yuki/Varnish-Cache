@@ -24,7 +24,7 @@ static struct symbol coding_table[] = {
 struct symbol *EOS = &coding_table[256];
 
 static int
-hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
+huf_decode(char *str, int nm, struct HdrIter *iter, int size) {
 	int cursor = 0;
 	int len = 0;
 	size *= 8;
@@ -80,7 +80,7 @@ hpack_decode(char *str, int nm, struct HdrIter *iter, int size) {
 }
 
 static int
-hpack_encode(struct HdrIter *iter, char *str, int size) {
+huf_encode(struct HdrIter *iter, char *str, int size) {
 	short r, s;
 	int v;
 	int l = 0;
@@ -118,7 +118,7 @@ hpack_encode(struct HdrIter *iter, char *str, int size) {
 }
 
 static int
-hpack_simulate(char *str, int size, int huff) {
+huf_simulate(char *str, int size, int huff) {
 	int len = 0;
 	if (!huff)
 		return (size);
@@ -190,7 +190,7 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint32_t num) {
 
 static enum HdrRet
 str_encode(struct HdrIter *iter, struct txt *t) {
-	int slen = hpack_simulate(t->ptr, t->size, t->huff);
+	int slen = huf_simulate(t->ptr, t->size, t->huff);
 	assert(iter->buf < iter->end);
 	if (t->huff)
 		*iter->buf = 0x80;
@@ -204,7 +204,7 @@ str_encode(struct HdrIter *iter, struct txt *t) {
 		return (HdrErr);
 
 	if (t->huff) {
-		return (hpack_encode(iter, t->ptr, t->size));
+		return (huf_encode(iter, t->ptr, t->size));
 	} else {
 		memcpy(iter->buf, t->ptr, slen);
 		iter->buf += slen;
@@ -225,7 +225,7 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 	if (huff) { /*Huffman encoding */
 		t->ptr = malloc((num * 8) / 5 + 1);
 		AN(t->ptr);
-		num = hpack_decode(t->ptr, (num * 8) / 5, iter, num);
+		num = huf_decode(t->ptr, (num * 8) / 5, iter, num);
 		if (!num) {
 			free(t->ptr);
 			return (HdrErr);
