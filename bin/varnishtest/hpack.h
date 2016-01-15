@@ -46,7 +46,7 @@ destroyHdrIter(struct HdrIter *iter);
 int getHdrIterLen(struct HdrIter *iter);
 
 enum HdrRet
-resizeTable(struct stm_ctx *ctx, uint64_t num);
+resizeTable(struct stm_ctx *ctx, uint32_t num);
 
 const struct hdrng *
 getHeader(struct stm_ctx *ctx, uint32_t index);

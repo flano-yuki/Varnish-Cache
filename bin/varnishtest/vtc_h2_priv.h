@@ -17,9 +17,9 @@ struct HdrIter {
 };
 
 const struct txt *
-tbl_get_key(struct stm_ctx *ctx, uint64_t index);
+tbl_get_key(struct stm_ctx *ctx, uint32_t index);
 
 const struct txt *
-tbl_get_value(struct stm_ctx *ctx, uint64_t index);
+tbl_get_value(struct stm_ctx *ctx, uint32_t index);
 void
 push_header (struct stm_ctx *ctx, const struct hdrng *h);

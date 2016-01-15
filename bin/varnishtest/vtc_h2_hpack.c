@@ -14,7 +14,7 @@ struct symbol {
 
 static struct symbol coding_table[] = {
 #define HPACK(i, v, l) {v, l},
-#include "inc.h"
+#include "vtc_h2_enctbl.h"
 #undef HPACK
 	{0, 0}
 };
