@@ -161,7 +161,7 @@ tbl_get_field(struct stm_ctx *ctx, uint64_t index, int key) {
 }
 
 const struct txt *
-tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
+tbl_get_key(struct stm_ctx *ctx, uint64_t index) {
 	return (tbl_get_field(ctx, index, 1));
 }
 

@@ -277,8 +277,8 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 		if (HdrErr == num_decode(&num, iter, 7))
 			return (HdrErr);
 
-		if (num) { /* indexed name and value*/
-			t = tbl_get_name(iter->ctx, num);
+		if (num) { /* indexed key and value*/
+			t = tbl_get_key(iter->ctx, num);
 			if (!t)
 				return (HdrErr);
 			txtcpy(&header->key, t);
@@ -330,8 +330,8 @@ decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 		return (HdrErr);
 
 	header->i = num;
-	if (num) { /* indexed name */
-		t = tbl_get_name(iter->ctx, num);
+	if (num) { /* indexed key */
+		t = tbl_get_key(iter->ctx, num);
 		if (!t)
 			return (HdrErr);
 		txtcpy(&header->key, t);

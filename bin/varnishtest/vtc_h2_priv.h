@@ -17,7 +17,7 @@ struct HdrIter {
 };
 
 const struct txt *
-tbl_get_name(struct stm_ctx *ctx, uint64_t index);
+tbl_get_key(struct stm_ctx *ctx, uint64_t index);
 
 const struct txt *
 tbl_get_value(struct stm_ctx *ctx, uint64_t index);
