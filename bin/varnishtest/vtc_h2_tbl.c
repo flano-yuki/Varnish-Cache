@@ -134,43 +134,40 @@ resizeTable(struct stm_ctx *ctx, uint64_t num) {
 	return (HdrDone);
 }
 
-const struct txt *
-tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
+static const struct txt *
+tbl_get_field(struct stm_ctx *ctx, uint64_t index, int key) {
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
 		return (NULL);
-	else if (index <= 61)
-		return (&ctx->sttbl[index].key);
+	else if (index <= 61) {
+		if (key)
+			return (&ctx->sttbl[index].key);
+		else
+			return (&ctx->sttbl[index].value);
+	}
 
 	index -= 62;
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
 		if (!index--)
 			break;
-	if (index && dh)
-		return (&dh->header.key);
-	else
+	if (index && dh) {
+		if (key)
+			return (&dh->header.key);
+		else
+			return (&dh->header.value);
+	} else
 		return (NULL);
 }
 
 const struct txt *
+tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
+	return (tbl_get_field(ctx, index, 1));
+}
+
+const struct txt *
 tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
-	struct dynhdr *dh;
-	assert(ctx);
-	if (index > 61 + ctx->size)
-		return (NULL);
-	else if (index <= 61)
-		return (&ctx->sttbl[index].value);
-
-	index -= 62;
-	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
-		if (!index--)
-			break;
-	if (index && dh)
-		return (&dh->header.value);
-	else
-		return (NULL);
-
+	return (tbl_get_field(ctx, index, 0));
 }
 
 const struct hdrng *
