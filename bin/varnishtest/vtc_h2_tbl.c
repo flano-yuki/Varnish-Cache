@@ -127,7 +127,7 @@ push_header (struct stm_ctx *ctx, const struct hdrng *oh) {
 }
 
 enum HdrRet
-resizeTable(struct stm_ctx *ctx, uint64_t num) {
+resizeTable(struct stm_ctx *ctx, uint32_t num) {
 	ctx->maxsize = num;
 	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize < ctx->size)
 		pop_header(ctx);
@@ -135,7 +135,7 @@ resizeTable(struct stm_ctx *ctx, uint64_t num) {
 }
 
 static const struct txt *
-tbl_get_field(struct stm_ctx *ctx, uint64_t index, int key) {
+tbl_get_field(struct stm_ctx *ctx, uint32_t index, int key) {
 	struct dynhdr *dh;
 	assert(ctx);
 	if (index > 61 + ctx->size)
@@ -161,12 +161,12 @@ tbl_get_field(struct stm_ctx *ctx, uint64_t index, int key) {
 }
 
 const struct txt *
-tbl_get_key(struct stm_ctx *ctx, uint64_t index) {
+tbl_get_key(struct stm_ctx *ctx, uint32_t index) {
 	return (tbl_get_field(ctx, index, 1));
 }
 
 const struct txt *
-tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
+tbl_get_value(struct stm_ctx *ctx, uint32_t index) {
 	return (tbl_get_field(ctx, index, 0));
 }
 
