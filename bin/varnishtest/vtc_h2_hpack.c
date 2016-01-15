@@ -120,15 +120,15 @@ huff_encode(struct hpk_iter *iter, char *str, int len) {
 }
 
 static int
-huff_simulate(char *str, int size, int huff) {
-	int len = 0;
-	if (!huff)
-		return (size);
-	do {
-		assert(str);
-		len += coding_table[(unsigned char)*str].size;	
-	} while (*(++str) != '\0');
-	return ((len+7)/8);
+huff_simulate(char *str, int ilen, int huff) {
+	int olen = 0;
+	if (!huff || !ilen)
+		return (ilen);
+	while (ilen--) {
+		olen += coding_table[(unsigned char)*str].size;
+		str++;
+	}
+	return ((olen+7)/8);
 }
 
 static enum hpk_result
