@@ -12,7 +12,7 @@
 #define STAT_HDRS(i, k, v) \
 	char key_ ## i[] = k; \
 	char value_ ## i[] = v;
-#include "vtc_h2_stattbl.c"
+#include "vtc_h2_stattbl.h"
 #undef STAT_HDRS
 
 struct hdrng sttbl[] = {
@@ -30,7 +30,7 @@ struct hdrng sttbl[] = {
 	.t = HdrIdx, \
 	.i = j, \
 },
-#include "vtc_h2_stattbl.c"
+#include "vtc_h2_stattbl.h"
 #undef STAT_HDRS
 };
 
