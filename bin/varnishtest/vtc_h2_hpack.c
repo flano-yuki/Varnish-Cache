@@ -130,7 +130,7 @@ hpack_simulate(char *str, int size, int huff) {
 }
 
 static enum HdrRet
-num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
+num_decode(uint32_t *result, struct HdrIter *iter, uint8_t prefix) {
 	uint8_t shift = 0;
 
 	assert(iter->buf < iter->end);
@@ -143,16 +143,15 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 		iter->buf++;
 		return (ITER_DONE(iter));
 	}
-
 	do {
 		iter->buf++;
 		if (iter->end == iter->buf)
 			return (HdrErr);
 		/* check for overflow */
-		if (UINT64_MAX - *result < (uint64_t)(*iter->buf & 0x7f) << shift)
+		if ((UINT32_MAX - *result) >> shift < (*iter->buf & 0x7f))
 			return (HdrErr);
 
-		*result += (uint64_t)(*iter->buf & 0x7f) << shift;
+		*result += (uint32_t)(*iter->buf & 0x7f) << shift;
 		shift += 7;
 	} while (*iter->buf & 0x80);
 	iter->buf++;
@@ -161,7 +160,7 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 }
 
 static enum HdrRet
-num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
+num_encode(struct HdrIter *iter, uint8_t prefix, uint32_t num) {
 	assert(prefix);
 	assert(prefix <= 8);
 	assert(iter->buf < iter->end);
@@ -215,7 +214,7 @@ str_encode(struct HdrIter *iter, struct txt *t) {
 
 static enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t) {
-	uint64_t num;
+	uint32_t num;
 	int huff;
 	assert(iter->buf < iter->end);
 	huff = (*iter->buf & 0x80);
@@ -267,7 +266,7 @@ enum HdrRet
 decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 	int pref = 0;
 	const struct txt *t;
-	uint64_t num;
+	uint32_t num;
 	int must_index = 0;
 	assert(iter);
 	assert(iter->buf < iter->end);
