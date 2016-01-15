@@ -8,8 +8,8 @@
 #include "vtc_h2_priv.h"
 
 struct symbol {
-	int val;
-	short size;
+	uint32_t	val;
+	uint8_t		size;
 };
 
 static struct symbol coding_table[] = {

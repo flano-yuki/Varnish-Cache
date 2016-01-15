@@ -37,8 +37,8 @@ struct hpk_hdr sttbl[] = {
 struct hpk_ctx {
 	const struct hpk_hdr *sttbl;
 	struct dynamic_table      dyntbl;
-	int maxsize;
-	int size;
+	uint32_t maxsize;
+	uint32_t size;
 };
 
 
@@ -74,7 +74,7 @@ void
 push_header (struct hpk_ctx *ctx, const struct hpk_hdr *oh) {
 	const struct hpk_hdr *ih;
 	struct dynhdr *h;
-	int len;
+	uint32_t len;
 
 	assert(ctx->size <= ctx->maxsize);
 	AN(oh);
@@ -207,7 +207,7 @@ dump_dyn_tbl(struct hpk_ctx *ctx) {
 	printf("DONE\n");
 }
 
-struct hpk_ctx *HPK_NewCtx(int maxsize) {
+struct hpk_ctx *HPK_NewCtx(uint32_t maxsize) {
 	struct hpk_ctx *ctx = calloc(1, sizeof(*ctx));
 	assert(ctx);
 	ctx->sttbl = sttbl;

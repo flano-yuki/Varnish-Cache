@@ -30,7 +30,7 @@ struct hpk_ctx;
 struct hpk_iter;
 
 struct hpk_ctx *
-HPK_NewCtx(int tblsize);
+HPK_NewCtx(uint32_t tblsize);
 void
 HPK_FreeCtx(struct hpk_ctx *ctx);
 
