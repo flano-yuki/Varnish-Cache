@@ -620,7 +620,7 @@ receive_frame(void *priv) {
 } while (0)
 
 static char *
-find_header(struct stream *s, char *k, int ks) {
+find_header(struct stream *s, char *k, int kl) {
 	struct hpk_hdr *h = s->hdrs;
 	int n = s->nhdrs;
 
@@ -628,7 +628,7 @@ find_header(struct stream *s, char *k, int ks) {
 	AN(k);
 
 	while (n--) {
-		if (ks == h->key.size  && !memcmp(h->key.ptr, k, ks))
+		if (kl == h->key.len  && !memcmp(h->key.ptr, k, kl))
 			return h->value.ptr;
 		h++;
 	}
@@ -865,9 +865,9 @@ clean_headers(struct stream *s) {
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 
 	while (s->nhdrs--) {
-		if (h->key.size)
+		if (h->key.len)
 			free(h->key.ptr);
-		if (h->value.size)
+		if (h->value.len)
 			free(h->value.ptr);
 		h++;
 	}
@@ -879,10 +879,10 @@ clean_headers(struct stream *s) {
 { \
 	hdr.key.ptr = strdup(k); \
 	AN(hdr.key.ptr); \
-	hdr.key.size = strlen(k); \
+	hdr.key.len = strlen(k); \
 	hdr.value.ptr = strdup(v); \
 	AN(hdr.value.ptr); \
-	hdr.value.size = strlen(v); \
+	hdr.value.len = strlen(v); \
 	HPK_EncHdr(iter, &hdr); \
 	free(hdr.key.ptr);\
 	free(hdr.value.ptr); \
@@ -927,10 +927,10 @@ cmd_tx11obj(CMD_ARGS)
 		hdr.i = 0;
 		hdr.key.huff = 0;
 		hdr.key.ptr = NULL;
-		hdr.key.size = 0; 
+		hdr.key.len = 0; 
 		hdr.value.huff = 0;
 		hdr.value.ptr = NULL;
-		hdr.value.size = 0;
+		hdr.value.len = 0;
 		if (!strcmp(*av, "-status") &&
 				!strcmp(cmd_str, "txresp")) {
 			ENC(hdr, ":status", av[1]);
@@ -975,9 +975,9 @@ cmd_tx11obj(CMD_ARGS)
 			av++;
 			AN(*av);
 			hdr.key.ptr = NULL;
-			hdr.key.size = 0;
+			hdr.key.len = 0;
 			hdr.value.ptr = *av;
-			hdr.value.size = strlen(*av);
+			hdr.value.len = strlen(*av);
 			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-litHdr")) {
 			av++;
@@ -999,7 +999,7 @@ cmd_tx11obj(CMD_ARGS)
 			av++;
 			AN(*av);
 			hdr.key.ptr = *av;
-			hdr.key.size = strlen(*av);
+			hdr.key.len = strlen(*av);
 
 			av++;
 			if (!strcmp(*av, "plain")) {
@@ -1010,7 +1010,7 @@ cmd_tx11obj(CMD_ARGS)
 			av++;
 			AN(*av);
 			hdr.value.ptr = *av;
-			hdr.value.size = strlen(*av);
+			hdr.value.len = strlen(*av);
 			vtc_log(vl, 4,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
 			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&

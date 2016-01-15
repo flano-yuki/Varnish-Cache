@@ -24,28 +24,30 @@ static struct symbol coding_table[] = {
 struct symbol *EOS = &coding_table[256];
 
 static int
-huff_decode(char *str, int nm, struct hpk_iter *iter, int size) {
+huff_decode(char *str, int nm, struct hpk_iter *iter, int ilen) {
 	int cursor = 0;
-	int len = 0;
-	size *= 8;
+	int olen = 0;
 	int prefix;
 	int idx = 0;
 	char nent;
 	struct pair *p;
-	while(cursor < size && nm--) {
+
+	ilen *= 8;
+
+	while(cursor < ilen && nm--) {
 		prefix = 0;
-		while (cursor < size) {
+		while (cursor < ilen) {
 			if (!((iter->buf[cursor/8] >> (7 - (cursor%8))) & 1))
 				break;
 			if (++prefix >= 30)
 				return (0);
 			cursor++;
 		}
-		if (cursor == size) {
+		if (cursor == ilen) {
 			/* check that last bit is 1 */
 			if (iter->buf[(cursor-1)/8] & 1) {
 				iter->buf += (cursor + 7)/8;
-				return (len);
+				return (olen);
 			} else
 				return (0);
 		}
@@ -69,24 +71,24 @@ huff_decode(char *str, int nm, struct hpk_iter *iter, int size) {
 			}
 			if (p->suffix == idx) { /* found it! */
 				*str++ = p->sym;
-				len++;
+				olen++;
 				break;
 			} else if (!nent) /* We went too far, Marty! */
 				return (0);
-		} while (cursor < size);
+		} while (cursor < ilen);
 	}
 	iter->buf += (cursor + 7)/8;
-	return (len);
+	return (olen);
 }
 
 static int
-huff_encode(struct hpk_iter *iter, char *str, int size) {
+huff_encode(struct hpk_iter *iter, char *str, int len) {
 	short r, s;
 	int v;
 	int l = 0;
 	char *b;
 	int cursor = 0;
-	while (size--) {
+	while (len--) {
 		v = coding_table[(unsigned char)*str].val;
 		r = coding_table[(unsigned char)*str].size;
 
@@ -190,7 +192,7 @@ num_encode(struct hpk_iter *iter, uint8_t prefix, uint32_t num) {
 
 static enum hpk_result
 str_encode(struct hpk_iter *iter, struct txt *t) {
-	int slen = huff_simulate(t->ptr, t->size, t->huff);
+	int slen = huff_simulate(t->ptr, t->len, t->huff);
 	assert(iter->buf < iter->end);
 	if (t->huff)
 		*iter->buf = 0x80;
@@ -204,7 +206,7 @@ str_encode(struct hpk_iter *iter, struct txt *t) {
 		return (hpk_err);
 
 	if (t->huff) {
-		return (huff_encode(iter, t->ptr, t->size));
+		return (huff_encode(iter, t->ptr, t->len));
 	} else {
 		memcpy(iter->buf, t->ptr, slen);
 		iter->buf += slen;
@@ -244,7 +246,7 @@ str_decode(struct hpk_iter *iter, struct txt *t) {
 	}
 
 	t->ptr[num] = '\0';
-	t->size = num;
+	t->len = num;
 	
 	return (ITER_DONE(iter));
 }
@@ -252,10 +254,10 @@ str_decode(struct hpk_iter *iter, struct txt *t) {
 static inline void
 txtcpy(struct txt *to, const struct txt *from) {
 	//AZ(to->ptr);
-	to->ptr = malloc(from->size + 1);
+	to->ptr = malloc(from->len + 1);
 	AN(to->ptr);
-	memcpy(to->ptr, from->ptr, from->size + 1);
-	to->size = from->size;
+	memcpy(to->ptr, from->ptr, from->len + 1);
+	to->len = from->len;
 }
 
 int gethpk_iterLen(struct hpk_iter *iter) {

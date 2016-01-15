@@ -15,7 +15,7 @@ enum hpk_indexed {
 
 struct txt {
 	char *ptr;
-	int size;
+	int len;
 	int huff;
 };
 

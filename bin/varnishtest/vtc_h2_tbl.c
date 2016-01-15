@@ -21,11 +21,11 @@ struct hpk_hdr sttbl[] = {
 { \
 	.key = { \
 		.ptr = key_ ## j, \
-		.size = sizeof(k) - 1 \
+		.len = sizeof(k) - 1 \
 	}, \
 	.value = { \
 		.ptr = value_ ## j, \
-		.size = sizeof(v) - 1 \
+		.len = sizeof(v) - 1 \
 	}, \
 	.t = hpk_idx, \
 	.i = j, \
@@ -64,7 +64,7 @@ pop_header(struct hpk_ctx *ctx) {
 	assert(!VTAILQ_EMPTY(&ctx->dyntbl));
 	struct dynhdr *h = VTAILQ_LAST(&ctx->dyntbl, dynamic_table);
 	VTAILQ_REMOVE(&ctx->dyntbl, h, list);
-	ctx->size -= h->header.key.size + h->header.value.size + 32;
+	ctx->size -= h->header.key.len + h->header.value.len + 32;
 	free(h->header.key.ptr);
 	free(h->header.value.ptr);
 	free(h);
@@ -74,54 +74,54 @@ void
 push_header (struct hpk_ctx *ctx, const struct hpk_hdr *oh) {
 	const struct hpk_hdr *ih;
 	struct dynhdr *h;
-	int size;
+	int len;
 
 	assert(ctx->size <= ctx->maxsize);
 	AN(oh);
 
 	if (!ctx->maxsize)
 		return;
-	size = oh->value.size + 32;
+	len = oh->value.len + 32;
 	if (oh->key.ptr)
-		size += oh->key.size;
+		len += oh->key.len;
 	else {
 		AN(oh->i);
 		ih = HPK_GetHdr(ctx, oh->i);
 		AN(ih);
-		size += ih->key.size;
+		len += ih->key.len;
 	}
 
 	h = malloc(sizeof(*h));
 	AN(h);
 	h->header.t = hpk_idx;
 
-	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize - ctx->size < size)
+	while (!VTAILQ_EMPTY(&ctx->dyntbl) && ctx->maxsize - ctx->size < len)
 		pop_header(ctx);
-	if (ctx->maxsize - ctx->size >= size) {
+	if (ctx->maxsize - ctx->size >= len) {
 
 		if (oh->key.ptr) {
-			h->header.key.size = oh->key.size;
-			h->header.key.ptr = malloc(oh->key.size + 1);
+			h->header.key.len = oh->key.len;
+			h->header.key.ptr = malloc(oh->key.len + 1);
 			AN(h->header.key.ptr);
-			memcpy(h->header.key.ptr, oh->key.ptr, oh->key.size + 1);
+			memcpy(h->header.key.ptr, oh->key.ptr, oh->key.len + 1);
 		} else {
 			AN(oh->i);
 			ih = HPK_GetHdr(ctx, oh->i);
 			AN(ih);
 
-			h->header.key.size = ih->key.size;
-			h->header.key.ptr = malloc(ih->key.size + 1);
+			h->header.key.len = ih->key.len;
+			h->header.key.ptr = malloc(ih->key.len + 1);
 			AN(h->header.key.ptr);
-			memcpy(h->header.key.ptr, ih->key.ptr, ih->key.size + 1);
+			memcpy(h->header.key.ptr, ih->key.ptr, ih->key.len + 1);
 		}
 
-		h->header.value.size = oh->value.size;
-		h->header.value.ptr = malloc(oh->value.size + 1);
+		h->header.value.len = oh->value.len;
+		h->header.value.ptr = malloc(oh->value.len + 1);
 		AN(h->header.value.ptr);
-		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.size + 1);
+		memcpy(h->header.value.ptr, oh->value.ptr, oh->value.len + 1);
 
 		VTAILQ_INSERT_HEAD(&ctx->dyntbl, h, list);
-		ctx->size += size;
+		ctx->size += len;
 	}
 
 }
