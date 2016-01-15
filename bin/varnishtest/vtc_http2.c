@@ -641,9 +641,11 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	uint32_t idx;
 	int n;
 	const struct hpk_hdr *h;
+	struct hpk_ctx *ctx;
 	struct frame *f = s->frame;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CHECK_OBJ_NOTNULL(s->hp, HTTP2_MAGIC);
 	AN(spec);
 	AN(buf);
 
@@ -741,31 +743,32 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			return (buf);
 		}
 	}
-	else if (1 == sscanf(spec, "intable[%u].key%n", &idx, &n) &&
-			spec[n] == '\0') {
-		h = HPK_GetHdr(s->hp->inctx, idx + 61);
-		return (h ? h->key.ptr : NULL);
-	}
-	else if (1 == sscanf(spec, "intable[%u].value%n", &idx, &n) &&
-			spec[n] == '\0') {
-		h = HPK_GetHdr(s->hp->inctx, idx + 61);
-		return (h ? h->value.ptr : NULL);
-	}
-	else if (!strcmp(spec, "intable.size")) {
-		RETURN_BUFFED(HPK_GetTblSize(s->hp->inctx));
-	}
-	else if (1 == sscanf(spec, "outtable[%u].key%n", &idx, &n) &&
-			spec[n] == '\0') {
-		h = HPK_GetHdr(s->hp->outctx, idx + 61);
-		return (h ? h->key.ptr : NULL);
-	}
-	else if (1 == sscanf(spec, "outtable[%u].value%n", &idx, &n) &&
-			spec[n] == '\0') {
-		h = HPK_GetHdr(s->hp->outctx, idx + 61);
-		return (h ? h->value.ptr : NULL);
-	}
-	else if (!strcmp(spec, "outtable.size")) {
-		RETURN_BUFFED(HPK_GetTblSize(s->hp->outctx));
+	else if (!memcmp(spec, "intable", 7) ||
+			!memcmp(spec, "outtable", 8)) {
+		if (spec[0] == 'i') {
+			spec += 7;
+			ctx = s->hp->inctx;
+		} else {
+			spec += 8;
+			ctx = s->hp->outctx;
+		}
+
+		if (1 == sscanf(spec, "[%u].key%n", &idx, &n) &&
+				spec[n] == '\0') {
+			h = HPK_GetHdr(ctx, idx + 61);
+			return (h ? h->key.ptr : NULL);
+		}
+		else if (1 == sscanf(spec, "[%u].value%n", &idx, &n) &&
+				spec[n] == '\0') {
+			h = HPK_GetHdr(ctx, idx + 61);
+			return (h ? h->value.ptr : NULL);
+		}
+		else if (!strcmp(spec, ".size")) {
+			RETURN_BUFFED(HPK_GetTblSize(ctx));
+		}
+		else if (!strcmp(spec, ".length")) {
+			RETURN_BUFFED(HPK_GetTblLength(ctx));
+		}
 	}
 	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);

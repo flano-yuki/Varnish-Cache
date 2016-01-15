@@ -196,11 +196,20 @@ HPK_GetTblSize(struct hpk_ctx *ctx) {
 	return ctx->size;
 }
 
+uint32_t
+HPK_GetTblLength(struct hpk_ctx *ctx) {
+	struct dynhdr *dh;
+	uint32_t l = 0;
+	VTAILQ_FOREACH(dh, &ctx->dyntbl, list)
+		l++;
+	return (l);
+}
+
 void
 dump_dyn_tbl(struct hpk_ctx *ctx) {
 	int i = 0;
-	printf("DUMPING %d/%d\n", ctx->size, ctx->maxsize);
 	struct dynhdr *dh;
+	printf("DUMPING %d/%d\n", ctx->size, ctx->maxsize);
 	VTAILQ_FOREACH(dh, &ctx->dyntbl, list) {
 		printf(" (%d) %s: %s\n", i++, dh->header.key.ptr, dh->header.value.ptr);
 	}

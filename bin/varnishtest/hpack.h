@@ -54,6 +54,8 @@ HPK_GetHdr(struct hpk_ctx *ctx, uint32_t index);
 
 uint32_t
 HPK_GetTblSize(struct hpk_ctx *ctx);
+uint32_t
+HPK_GetTblLength(struct hpk_ctx *ctx);
 
 /* DEBUG */
 void
