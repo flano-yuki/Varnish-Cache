@@ -9,13 +9,6 @@ struct dynhdr {
 
 VTAILQ_HEAD(dynamic_table,dynhdr);
 
-struct stm_ctx {
-	struct hdrng *sttbl;
-	struct dynamic_table      dyntbl;
-	int maxsize;
-	int size;
-};
-
 struct HdrIter {
 	struct stm_ctx *ctx;
 	char *orig;
@@ -23,10 +16,10 @@ struct HdrIter {
 	char *end;
 };
 
-struct txt *
+const struct txt *
 tbl_get_name(struct stm_ctx *ctx, uint64_t index);
 
-struct txt *
+const struct txt *
 tbl_get_value(struct stm_ctx *ctx, uint64_t index);
 void
 push_header (struct stm_ctx *ctx, const struct hdrng *h);

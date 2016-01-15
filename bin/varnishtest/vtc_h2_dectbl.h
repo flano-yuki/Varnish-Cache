@@ -2,7 +2,7 @@ struct pair {
 	char sym;
 	char suffix;
 };
-struct pair p[] = {
+struct pair symtbl[] = {
 	{  48, 16 }, /* 0 0 */
 	{  49, 17 }, /* 1 0 */
 	{  50, 18 }, /* 10 0 */
@@ -302,6 +302,6 @@ struct dec_tbl decoding_table = {
 		{ 253,  2 }, /* 28*/
 		{ 255,  1 }, /* 29*/
 	},
-	p
+	symtbl
 };
 

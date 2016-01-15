@@ -8,22 +8,39 @@
 #include "hpack.h"
 #include "vtc_h2_priv.h"
 
+/* TODO: fix that crazy workaround */
+#define STAT_HDRS(i, k, v) \
+	char key_ ## i[] = k; \
+	char value_ ## i[] = v;
+#include "vtc_h2_stattbl.c"
+#undef STAT_HDRS
+
 struct hdrng sttbl[] = {
 	{{NULL, 0}, {NULL, 0}, HdrIdx, 0},
-#define STAT_HDRS(i, k, v) \
+#define STAT_HDRS(j, k, v) \
 { \
 	.key = { \
-		.ptr = k, \
+		.ptr = key_ ## j, \
 		.size = sizeof(k) - 1 \
 	}, \
 	.value = { \
-		.ptr = v, \
+		.ptr = value_ ## j, \
 		.size = sizeof(v) - 1 \
 	}, \
+	.t = HdrIdx, \
+	.i = j, \
 },
 #include "vtc_h2_stattbl.c"
 #undef STAT_HDRS
 };
+
+struct stm_ctx {
+	const struct hdrng *sttbl;
+	struct dynamic_table      dyntbl;
+	int maxsize;
+	int size;
+};
+
 
 struct HdrIter *newHdrIter(struct stm_ctx *ctx, char *buf, int size) {
 	struct HdrIter *iter = malloc(sizeof(*iter));
@@ -112,7 +129,7 @@ resizeTable(struct stm_ctx *ctx, uint64_t num) {
 	return (HdrDone);
 }
 
-struct txt *
+const struct txt *
 tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
 	struct dynhdr *dh;
 	assert(ctx);
@@ -131,7 +148,7 @@ tbl_get_name(struct stm_ctx *ctx, uint64_t index) {
 		return (NULL);
 }
 
-struct txt *
+const struct txt *
 tbl_get_value(struct stm_ctx *ctx, uint64_t index) {
 	struct dynhdr *dh;
 	assert(ctx);

@@ -129,7 +129,7 @@ hpack_simulate(char *str, int size, int huff) {
 	return ((len+7)/8);
 }
 
-enum HdrRet
+static enum HdrRet
 num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 	uint8_t shift = 0;
 
@@ -160,7 +160,7 @@ num_decode(uint64_t *result, struct HdrIter *iter, uint8_t prefix) {
 	return (ITER_DONE(iter));
 }
 
-enum HdrRet
+static enum HdrRet
 num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
 	assert(prefix);
 	assert(prefix <= 8);
@@ -189,7 +189,7 @@ num_encode(struct HdrIter *iter, uint8_t prefix, uint64_t num) {
 	return (ITER_DONE(iter));
 }
 
-enum HdrRet
+static enum HdrRet
 str_encode(struct HdrIter *iter, struct txt *t) {
 	int slen = hpack_simulate(t->ptr, t->size, t->huff);
 	assert(iter->buf < iter->end);
@@ -213,7 +213,7 @@ str_encode(struct HdrIter *iter, struct txt *t) {
 	}
 }
 
-enum HdrRet
+static enum HdrRet
 str_decode(struct HdrIter *iter, struct txt *t) {
 	uint64_t num;
 	int huff;
@@ -251,7 +251,7 @@ str_decode(struct HdrIter *iter, struct txt *t) {
 }
 
 static inline void
-txtcpy(struct txt *to, struct txt *from) {
+txtcpy(struct txt *to, const struct txt *from) {
 	//AZ(to->ptr);
 	to->ptr = malloc(from->size + 1);
 	AN(to->ptr);
@@ -266,7 +266,7 @@ int getHdrIterLen(struct HdrIter *iter) {
 enum HdrRet
 decNextHdr(struct HdrIter *iter, struct hdrng *header) {
 	int pref = 0;
-	struct txt *t;
+	const struct txt *t;
 	uint64_t num;
 	int must_index = 0;
 	assert(iter);
