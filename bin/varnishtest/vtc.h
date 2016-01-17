@@ -83,6 +83,8 @@ int http_process(struct vtclog *vl, const char *spec, int sock, int *sfd);
 int http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 		unsigned nosettings);
 
+char * synth_body(const char *len, int rnd);
+
 void cmd_server_genvcl(struct vsb *vsb);
 
 void vtc_loginit(char *buf, unsigned buflen);

@@ -100,7 +100,7 @@ static const char * const nl = "\r\n";
  * Generate a synthetic body
  */
 
-static char *
+char *
 synth_body(const char *len, int rnd)
 {
 	int i, j, k, l;

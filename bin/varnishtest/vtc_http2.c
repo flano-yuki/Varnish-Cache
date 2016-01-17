@@ -1018,7 +1018,14 @@ cmd_tx11obj(CMD_ARGS)
 			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
 				strcmp(cmd_str, "txcont")) {
-			body = av[1];
+			AZ(body);
+			REPLACE(body, av[1]);
+			f.flags &= ~END_STREAM;
+			av++;
+		} else if (!strcmp(*av, "-bodylen") &&
+				strcmp(cmd_str, "txcont")) {
+			AZ(body);
+			body = synth_body(av[1], 0);
 			f.flags &= ~END_STREAM;
 			av++;
 		} else if (!strcmp(*av, "-nostrend") &&
@@ -1056,6 +1063,7 @@ cmd_tx11obj(CMD_ARGS)
 	f.data = body;
 
 	write_frame(s->hp, &f);
+	free(body);
 }
 
 static void
