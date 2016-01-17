@@ -323,19 +323,19 @@ do { \
 } while(0)
 
 static void
-clean_frame(struct stream *s)
+clean_frame(struct frame **f)
 {
-	struct frame *f;
-	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
-
-	if (!s->frame)
+	AN(f);
+	if (!*f)
 		return;
-	CAST_OBJ_NOTNULL(f, s->frame, FRAME_MAGIC);
-	if (s->frame->type == TYPE_GOAWAY)
-		free(f->md.goaway.debug);
-	free(f->data);
-	free(f);
-	s->frame = NULL;
+
+	CHECK_OBJ_NOTNULL(*f, FRAME_MAGIC);
+
+	if ((*f)->type == TYPE_GOAWAY)
+		free((*f)->md.goaway.debug);
+	free((*f)->data);
+	free(*f);
+	*f = NULL;
 }
 
 static void
@@ -427,8 +427,10 @@ receive_frame(void *priv) {
 			}
 			if (!s)
 				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
-			if (!hp->running)
+			if (!hp->running) {
+				clean_frame(&f);
 				return (NULL);
+			}
 		}
 		/* parse the frame according to it type, and fill the metada */
 		if (f->type == TYPE_DATA) {
@@ -1402,7 +1404,7 @@ rxstuff(struct stream *s) {
 		AZ(pthread_mutex_unlock(&s->hp->mtx));
 		return (NULL);
 	}
-	clean_frame(s);
+	clean_frame(&s->frame);
 	f = VTAILQ_LAST(&s->fq, fq_head);
 	VTAILQ_REMOVE(&s->fq, f, list);
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
@@ -1797,13 +1799,17 @@ static void
 stream_wait(struct stream *s)
 {
 	void *res;
+	struct frame *f, *f2;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	vtc_log(s->hp->vl, 2, "Waiting for stream %lu", s->id);
 	AZ(pthread_join(s->tp, &res));
 	if (res != NULL)
 		vtc_log(s->hp->vl, 0, "Stream %lu returned \"%s\"", s->id, (char *)res);
-	clean_frame(s);
+
+	VTAILQ_FOREACH_SAFE(f, &s->fq, list, f2)
+		clean_frame(&f);
+	clean_frame(&s->frame);
 	s->tp = 0;
 	s->running = 0;
 }
