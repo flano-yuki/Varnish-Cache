@@ -1,0 +1,77 @@
+h2server s1 {
+	stream 1 {
+		rxreq
+		expect intable.size == 57
+		expect intable[1].key == ":authority"
+		expect intable[1].value == "www.example.com"
+		txresp
+	} -run
+
+	stream 3 {
+		rxreq
+		expect intable[1].key == "cache-control"
+		expect intable[1].value == "no-cache"
+		expect intable[2].key == ":authority"
+		expect intable[2].value == "www.example.com"
+		expect intable.size == 110
+		txresp
+	} -run
+
+	stream 5 {
+		rxreq
+		expect intable[1].key == "custom-key"
+		expect intable[1].value == "custom-value"
+		expect intable[2].key == "cache-control"
+		expect intable[2].value == "no-cache"
+		expect intable[3].key == ":authority"
+		expect intable[3].value == "www.example.com"
+		expect intable.size == 164
+		txresp
+	} -run
+} -start
+
+h2client c1 -connect ${s1_sock} {
+	stream 1 {
+
+		txreq -idxHdr 2 \
+			-idxHdr 6 \
+			-idxHdr 4 \
+			-litIdxHdr inc 1 huf "www.example.com"
+		expect outtable[1].key == ":authority"
+		expect outtable[1].value == "www.example.com"
+		rxresp
+	} -run
+
+	stream 3 {
+		txreq -idxHdr 2 \
+			-idxHdr 6 \
+			-idxHdr 4 \
+			-idxHdr 62 \
+			-litIdxHdr inc 24 huf no-cache
+		expect outtable[1].key == "cache-control"
+		expect outtable[1].value == "no-cache"
+		expect outtable[2].key == ":authority"
+		expect outtable[2].value == "www.example.com"
+		expect outtable.size == 110
+		rxresp
+	} -run
+
+	stream 5 {
+		txreq -idxHdr 2 \
+			-idxHdr 7 \
+			-idxHdr 5 \
+			-idxHdr 63 \
+			-litHdr inc huf "custom-key" huf "custom-value"
+		expect outtable[1].key == "custom-key"
+		expect outtable[1].value == "custom-value"
+		expect outtable[2].key == "cache-control"
+		expect outtable[2].value == "no-cache"
+		expect outtable[3].key == ":authority"
+		expect outtable[3].value == "www.example.com"
+		expect outtable.size == 164
+		rxresp
+	} -run
+
+} -run
+
+h2server s1 -wait

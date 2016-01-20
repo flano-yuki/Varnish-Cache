@@ -1,0 +1,15 @@
+h2server s1 {
+	stream 1 {
+		rxreq
+		expect req.bodylen == 3
+		txresp -bodylen 7
+	} -run
+} -start
+
+h2client c1 -connect ${s1_sock} {
+	stream 1 {
+		txreq -bodylen 3
+		rxresp
+		expect resp.bodylen == 7
+	} -run
+} -run

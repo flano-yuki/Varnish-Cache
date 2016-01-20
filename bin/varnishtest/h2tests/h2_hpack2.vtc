@@ -1,0 +1,116 @@
+h2server s1 {
+	stream 0 {
+		txsettings -hdrtbl 256
+		rxsettings
+		txsettings -ack
+		rxsettings
+		expect settings.ack == true
+	} -run
+
+	stream 1 {
+		rxreq
+		expect intable[1].key == "location"
+		expect intable[1].value == "https://www.example.com"
+		expect intable[2].key == "date"
+		expect intable[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect intable[3].key == "cache-control"
+		expect intable[3].value == "private"
+		expect intable[4].key == ":status"
+		expect intable[4].value == "302"
+		expect intable.size == 222
+		txresp
+	} -run
+
+	stream 3 {
+		rxreq
+		expect intable[1].key == ":status"
+		expect intable[1].value == "307"
+		expect intable[2].key == "location"
+		expect intable[2].value == "https://www.example.com"
+		expect intable[3].key == "date"
+		expect intable[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect intable[4].key == "cache-control"
+		expect intable[4].value == "private"
+		expect intable.size == 222
+		txresp
+	} -run
+
+	stream 5 {
+		rxreq
+		expect intable[1].key == "set-cookie"
+		expect intable[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
+		expect intable[2].key == "content-encoding"
+		expect intable[2].value == "gzip"
+		expect intable[3].key == "date"
+		expect intable[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
+		expect intable.size == 215
+		txresp
+	} -run
+} -start
+
+h2client c1 -connect ${s1_sock} {
+	stream 0 {
+		txsettings -hdrtbl 256
+		rxsettings
+		txsettings -ack
+		rxsettings
+		expect settings.ack == true
+	} -run
+
+	stream 1 {
+
+		txreq \
+			-litIdxHdr inc 8 plain "302" \
+			-litIdxHdr inc 24 plain "private" \
+			-litIdxHdr inc 33 plain "Mon, 21 Oct 2013 20:13:21 GMT" \
+			-litIdxHdr inc 46 plain "https://www.example.com"
+		expect outtable[1].key == "location"
+		expect outtable[1].value == "https://www.example.com"
+		expect outtable[2].key == "date"
+		expect outtable[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect outtable[3].key == "cache-control"
+		expect outtable[3].value == "private"
+		expect outtable[4].key == ":status"
+		expect outtable[4].value == "302"
+		expect outtable.size == 222
+		rxresp
+	} -run
+
+	stream 3 {
+		txreq \
+			-litIdxHdr inc 8 huf "307" \
+			-idxHdr 65 \
+			-idxHdr 64 \
+			-idxHdr 63
+		expect outtable[1].key == ":status"
+		expect outtable[1].value == "307"
+		expect outtable[2].key == "location"
+		expect outtable[2].value == "https://www.example.com"
+		expect outtable[3].key == "date"
+		expect outtable[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect outtable[4].key == "cache-control"
+		expect outtable[4].value == "private"
+		expect outtable.size == 222
+		rxresp
+	} -run
+
+	stream 5 {
+		txreq -idxHdr 8 \
+			-idxHdr 65 \
+			-litIdxHdr inc 33 plain "Mon, 21 Oct 2013 20:13:22 GMT" \
+			-idxHdr 64 \
+			-litIdxHdr inc 26 plain "gzip" \
+			-litIdxHdr inc 55 plain "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
+		expect outtable[1].key == "set-cookie"
+		expect outtable[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
+		expect outtable[2].key == "content-encoding"
+		expect outtable[2].value == "gzip"
+		expect outtable[3].key == "date"
+		expect outtable[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
+		expect outtable.size == 215
+		rxresp
+	} -run
+
+} -run
+
+h2server s1 -wait
