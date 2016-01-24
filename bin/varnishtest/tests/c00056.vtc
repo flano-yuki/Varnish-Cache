@@ -6,28 +6,11 @@ server s1 {
 	accept
 	rxreq
 	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 2"
-	rxreq
-	txresp -hdr "foo: 10"
 } -start
 
 varnish v1 -vcl+backend {
-	sub vcl_recv { return (hash); }
+	sub vcl_recv { return (pass); }
 	sub vcl_backend_response {
-		set beresp.ttl = 2d;
 		set beresp.http.bar = bereq.retries;
 		if (beresp.http.foo != bereq.http.stop) {
 			return (retry);
@@ -36,15 +19,32 @@ varnish v1 -vcl+backend {
 } -start
 
 varnish v1 -cliok "param.set debug +syncvsl"
-varnish v1 -cliok "param.set max_retries 20"
 
 client c1 {
-	txreq -hdr "stop: 10"
+	txreq -hdr "stop: 2"
 	rxresp
-	expect resp.http.foo == 10
-	expect resp.http.foo == "resp.http.foo"
+	expect resp.http.foo == 2
 } -run
 
-varnish v1 -expect n_object == 1
+delay .1
 
- #XXX: Add a test which exceeds max_retries and gets 503 back
+server s1 {
+	rxreq
+	txresp -hdr "foo: 1"
+	accept
+	rxreq
+	txresp -hdr "foo: 2"
+	accept
+	rxreq
+	txresp -hdr "foo: 3"
+} -start
+
+varnish v1 -cliok "param.set max_retries 2"
+
+client c1 {
+	txreq -hdr "stop: 3"
+	rxresp
+	expect resp.http.foo == 3
+} -run
+
+# XXX: Add a test which exceeds max_retries and gets 503 back
