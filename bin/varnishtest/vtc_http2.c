@@ -1321,7 +1321,7 @@ cmd_txgoaway(CMD_ARGS)
 		} else if (!strcmp(*av, "-laststream")) {
 			++av;
 			STRTOU32(ls, *av, p, vl, "-laststream");
-			if (ls >= (1 << 31)) {
+			if (ls & (1 << 31)) {
 				vtc_log(vl, 0, "-laststream must be a 31-bits integer "
 						"(found %s)", *av);
 			}
@@ -1750,7 +1750,7 @@ stream_new(const char *name, struct http2 *h)
 	s->ws = 0xffff;
 
 	STRTOU32(s->id, name, p, h->vl, "-some");
-	if (s->id >= (1 << 31))
+	if (s->id & (1 << 31))
 		vtc_log(h->vl, 0, "Stream id must be a 31-bits integer "
 				"(found %s)", name);
 
