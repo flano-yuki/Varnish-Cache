@@ -1371,6 +1371,10 @@ cmd_txwinup(CMD_ARGS)
 		if (!strcmp(*av, "-size")) {
 			AN(++av);
 			STRTOU32(size, *av, p, vl, "-size");
+			if (size & (1 << 31)) {
+				vtc_log(vl, 0, "-size must be a 31-bits integer "
+						"(found %s)", *av);
+			}
 		} else
 			break;	
 	}
