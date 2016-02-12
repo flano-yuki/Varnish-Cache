@@ -456,7 +456,7 @@ receive_frame(void *priv) {
 			vtc_log(hp->vl, 3, "s%lu - data: %s", s->id, f->data);
 		} else if (f->type == TYPE_HEADERS || f->type == TYPE_CONT) {
 			struct hpk_iter *iter;
-			enum hpk_result r = 0;
+			enum hpk_result r = hpk_err;
 			iter = HPK_NewIter(s->hp->inctx, f->data, f->size);
 
 			while (s->nhdrs < MAX_HDR) {
