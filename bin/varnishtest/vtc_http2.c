@@ -456,7 +456,7 @@ receive_frame(void *priv) {
 			vtc_log(hp->vl, 3, "s%lu - data: %s", s->id, f->data);
 		} else if (f->type == TYPE_HEADERS || f->type == TYPE_CONT) {
 			struct hpk_iter *iter;
-			enum hpk_result r;
+			enum hpk_result r = 0;
 			iter = HPK_NewIter(s->hp->inctx, f->data, f->size);
 
 			while (s->nhdrs < MAX_HDR) {
@@ -1146,6 +1146,7 @@ cmd_txprio(CMD_ARGS)
 	uint32_t weight = 0;
 	int exclusive = 0;
 	char buf[5];
+	uint32_t *ubuf = (uint32_t *)buf;
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -1172,7 +1173,7 @@ cmd_txprio(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown txprio spec: %s\n", *av);
 
-	*(uint32_t *)buf = htonl(stid | exclusive);
+	*ubuf = htonl(stid | exclusive);
 	buf[4] = weight & 0xff;
 	write_frame(s->hp, &f);
 }
@@ -1424,7 +1425,7 @@ static void
 cmd_rxhdrs(CMD_ARGS)
 {
 	struct stream *s;
-	struct frame *f;
+	struct frame *f = NULL;
 	char *p;
 	int loop = 0;
 	int times = 1;
@@ -1461,7 +1462,7 @@ static void
 cmd_rxcont(CMD_ARGS)
 {
 	struct stream *s;
-	struct frame *f;
+	struct frame *f = NULL;
 	char *p;
 	int loop = 0;
 	int times = 1;
@@ -1496,7 +1497,7 @@ static void
 cmd_rxdata(CMD_ARGS)
 {
 	struct stream *s;
-	struct frame *f;
+	struct frame *f = NULL;
 	char *p;
 	int loop = 0;
 	int times = 1;
