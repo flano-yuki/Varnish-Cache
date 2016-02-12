@@ -279,18 +279,18 @@ readFrameHeader(struct frame *f, char *buf)
 	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
 	AN(buf);
 
-	f->size  = buf[0] << 16;
-	f->size += buf[1] << 8;
-	f->size += buf[2];
+	f->size  = (unsigned char)buf[0] << 16;
+	f->size += (unsigned char)buf[1] << 8;
+	f->size += (unsigned char)buf[2];
 
-	f->type = buf[3];
+	f->type = (unsigned char)buf[3];
 
-	f->flags = buf[4];
+	f->flags = (unsigned char)buf[4];
 
-	f->stid  = (0xff & buf[5]) << 24;
-	f->stid += (0xff & buf[6]) << 16;
-	f->stid += (0xff & buf[7]) <<  8;
-	f->stid += (0xff & buf[8]);
+	f->stid  = (0xff & (unsigned char)buf[5]) << 24;
+	f->stid += (0xff & (unsigned char)buf[6]) << 16;
+	f->stid += (0xff & (unsigned char)buf[7]) <<  8;
+	f->stid += (0xff & (unsigned char)buf[8]);
 };
 
 static void
