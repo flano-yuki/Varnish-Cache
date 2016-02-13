@@ -378,6 +378,21 @@ write_frame(struct http2 *hp, struct frame *f)
 	AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
+static void
+exclusive_stream_dependency(struct stream *s)
+{
+	struct stream *target = NULL;
+	struct http2 *hp = s->hp;
+	
+	if (s->id == 0)
+		return;
+	
+	VTAILQ_FOREACH(target, &hp->streams, list) {
+		if (target->id != s->id && target->stream == s->stream)
+			target->stream = s->id;
+	}
+}
+
 /* read a frame and queue it in the relevant stream, wait if not present yet.
  */
 static void *
@@ -461,11 +476,18 @@ receive_frame(void *priv) {
 			struct hpk_iter *iter;
 			enum hpk_result r = hpk_err;
 			int delta = 0;
+			int exclusive = 0;
 			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
 				delta = 5;
 				s->stream = ntohl(*(uint32_t*)f->data) & ~(1 << 31);
+				if (ntohl(*(uint32_t*)f->data) & (1 << 31)) {
+					exclusive = 1;
+				}
 				s->weight = f->data[4];
-                        }
+				if (exclusive) {
+					exclusive_stream_dependency(s);
+				}
+			}
 			iter = HPK_NewIter(s->hp->inctx, f->data + delta, f->size - delta);
 
 			while (s->nhdrs < MAX_HDR) {
@@ -491,8 +513,10 @@ receive_frame(void *priv) {
 			AN(buf);
 
 			f->md.prio.stream = ntohl(*(uint32_t*)f->data);
-			if (f->md.prio.stream & (1 << 31))
+			if (f->md.prio.stream & (1 << 31)){
 				f->md.prio.exclusive = 1;
+				exclusive_stream_dependency(s);
+			}
 
 			f->md.prio.stream &= ~(1 << 31);
 			s->stream = f->md.prio.stream;
@@ -1111,6 +1135,9 @@ cmd_tx11obj(CMD_ARGS)
 		buf[4] = s->weight;
 		f.size += 5;
 	}
+	if (exclusive){
+		exclusive_stream_dependency(s);
+	}
 	f.data = buf;	
 	HPK_FreeIter(iter);
 	write_frame(s->hp, &f);
@@ -1231,6 +1258,10 @@ cmd_txprio(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown txprio spec: %s\n", *av);
 	s->weight = weight & 0xff;
 	s->stream = stid;
+
+	if(exclusive){
+		exclusive_stream_dependency(s);
+	}
 
 	*ubuf = htonl(stid | exclusive);
 	buf[4] = s->weight;

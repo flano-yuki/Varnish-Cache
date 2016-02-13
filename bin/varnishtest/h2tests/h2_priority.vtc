@@ -1,3 +1,5 @@
+varnishtest "priority"
+
 h2server s1 {        
 	stream 1 {
 		rxreq
