@@ -487,6 +487,8 @@ receive_frame(void *priv) {
 				if (exclusive) {
 					exclusive_stream_dependency(s);
 				}
+				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
+				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 			}
 			iter = HPK_NewIter(s->hp->inctx, f->data + delta, f->size - delta);
 
@@ -1134,6 +1136,9 @@ cmd_tx11obj(CMD_ARGS)
 		*(uint32_t *)ubuf = htonl(stid | exclusive);
 		buf[4] = s->weight;
 		f.size += 5;
+
+		vtc_log(s->hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
+		vtc_log(s->hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 	}
 	if (exclusive){
 		exclusive_stream_dependency(s);
