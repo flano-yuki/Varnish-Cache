@@ -956,6 +956,7 @@ cmd_tx11obj(CMD_ARGS)
 			av += 2;
 		} else if (!strcmp(*av, "-idxHdr")) {
 			AN(++av);
+			hdr.t = hpk_idx;
 			STRTOU32(hdr.i, *av, p, vl, "-idxHdr");
 			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-litIdxHdr")) {
