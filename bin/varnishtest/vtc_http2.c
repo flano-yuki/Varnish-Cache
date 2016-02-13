@@ -1000,7 +1000,11 @@ cmd_tx11obj(CMD_ARGS)
 		hdr.value.huff = 0;
 		hdr.value.ptr = NULL;
 		hdr.value.len = 0;
-		if (!strcmp(*av, "-status") &&
+		if (!strcmp(*av, "-noadd")) {
+			url_done = 1;
+			status_done = 1;
+			req_done = 1;
+		} else if (!strcmp(*av, "-status") &&
 				!strcmp(cmd_str, "txresp")) {
 			ENC(hdr, ":status", av[1]);
 			av++;
