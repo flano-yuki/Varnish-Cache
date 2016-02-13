@@ -999,7 +999,7 @@ cmd_tx11obj(CMD_ARGS)
 			av++;
 			if (!strcmp(*av, "plain")) {
 			} else if (!strcmp(*av, "huf")) {
-				hdr.value.huff = 1;
+				hdr.key.huff = 1;
 			} else
 				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
 			av++;
