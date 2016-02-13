@@ -1138,9 +1138,9 @@ cmd_tx11obj(CMD_ARGS)
 	hdr.key.huff = 0;
 	hdr.value.huff = 0;
 
-	if (!status_done) {
+	if (!status_done)
 		ENC(hdr, ":status", "200");
-	} if (!url_done)
+	if (!url_done)
 		ENC(hdr, ":path", "/");
 	if (!req_done)
 		ENC(hdr, ":method", "GET");
