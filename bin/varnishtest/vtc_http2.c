@@ -994,14 +994,14 @@ cmd_tx11obj(CMD_ARGS)
 			} else if (!strcmp(*av, "never")) {
 				hdr.t = hpk_never;
 			} else
-				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
+				vtc_log(vl, 0, "first -litHdr arg can be inc, not, never (got: %s)", *av);
 
 			av++;
 			if (!strcmp(*av, "plain")) {
 			} else if (!strcmp(*av, "huf")) {
 				hdr.key.huff = 1;
 			} else
-				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+				vtc_log(vl, 0, "second -litHdr arg can be huf or plain (got: %s)", *av);
 			av++;
 			AN(*av);
 			hdr.key.ptr = *av;
@@ -1012,7 +1012,7 @@ cmd_tx11obj(CMD_ARGS)
 			} else if (!strcmp(*av, "huf")) {
 				hdr.value.huff = 1;
 			} else
-				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+				vtc_log(vl, 0, "fourth -litHdr arg can be huf or plain (got: %s)", *av);
 			av++;
 			AN(*av);
 			hdr.value.ptr = *av;
