@@ -463,15 +463,21 @@ receive_frame(void *priv) {
 				r = HPK_DecHdr(iter, s->hdrs + s->nhdrs);
 				if (r == hpk_err )
 					break;
-				vtc_log(hp->vl, 4, "s%lu - header: %s : %s (%d)",
-						s->id, s->hdrs[s->nhdrs].key.ptr, s->hdrs[s->nhdrs].value.ptr, s->nhdrs);
+				vtc_log(hp->vl, 4,
+						"s%lu - header: %s : %s (%d)",
+						s->id,
+						s->hdrs[s->nhdrs].key.ptr,
+						s->hdrs[s->nhdrs].value.ptr,
+						s->nhdrs);
 				s->nhdrs++;
 				if (r == hpk_done)
 					break;
 			}
 			//XXX document too many headers errors
 			if (r != hpk_done)
-				vtc_log(hp->vl, hp->fatal, "Header decoding failed");
+				vtc_log(hp->vl, hp->fatal ? 4 : 0,
+						"Header decoding failed (%d)",
+						hp->fatal);
 			HPK_FreeIter(iter);
 		} else if (f->type == TYPE_PRIORITY) {
 			char *buf;
