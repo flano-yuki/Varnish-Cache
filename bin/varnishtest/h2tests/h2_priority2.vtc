@@ -12,21 +12,21 @@ h2server s1 {
 	stream 5 {
 		rxreq
 		txresp
-		expect stream.stream == 0
+		expect stream.dependency == 0
 	} -run
 
 	stream 1 {
-		expect stream.stream == 5
+		expect stream.dependency == 5
 	} -run
 	stream 3 {
-		expect stream.stream == 5
+		expect stream.dependency == 5
 	} -run
 
 	stream 1 {
 		rxprio
 	} -run
 	stream 5 {
-		expect stream.stream == 1
+		expect stream.dependency == 1
 	} -run
 
 } -start
@@ -41,22 +41,22 @@ h2client c1 -connect ${s1_sock} {
 	} -run
 	stream 5 {
 		txreq -req GET -exclusive
-		expect stream.stream == 0
+		expect stream.dependency == 0
 		rxresp
 	} -run
 
 	stream 1 {
-		expect stream.stream == 5
+		expect stream.dependency == 5
 	} -run
 	stream 3 {
-		expect stream.stream == 5
+		expect stream.dependency == 5
 	} -run
 
 	stream 1 {
 		txprio -stream 0 -exclusive
 	} -run
 	stream 5 {
-		expect stream.stream == 1
+		expect stream.dependency == 1
 	} -run
 } -run
 

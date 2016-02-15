@@ -144,7 +144,7 @@ struct stream {
 	struct hpk_hdr		hdrs[MAX_HDR];
 	int			nhdrs;
 
-	int			stream;
+	int			dependency;
 	int			weight;
 };
 
@@ -388,8 +388,8 @@ exclusive_stream_dependency(struct stream *s)
 		return;
 	
 	VTAILQ_FOREACH(target, &hp->streams, list) {
-		if (target->id != s->id && target->stream == s->stream)
-			target->stream = s->id;
+		if (target->id != s->id && target->dependency == s->dependency)
+			target->dependency = s->id;
 	}
 }
 
@@ -479,7 +479,7 @@ receive_frame(void *priv) {
 			int exclusive = 0;
 			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
 				delta = 5;
-				s->stream = ntohl(*(uint32_t*)f->data) & ~(1 << 31);
+				s->dependency = ntohl(*(uint32_t*)f->data) & ~(1 << 31);
 				if (ntohl(*(uint32_t*)f->data) & (1 << 31)) {
 					exclusive = 1;
 				}
@@ -515,13 +515,13 @@ receive_frame(void *priv) {
 			AN(buf);
 
 			f->md.prio.stream = ntohl(*(uint32_t*)f->data);
-			if (f->md.prio.stream & (1 << 31)){
+
+			f->md.prio.stream &= ~(1 << 31);
+			s->dependency = f->md.prio.stream;
+			if (ntohl(*(uint32_t*)f->data) & (1 << 31)){
 				f->md.prio.exclusive = 1;
 				exclusive_stream_dependency(s);
 			}
-
-			f->md.prio.stream &= ~(1 << 31);
-			s->stream = f->md.prio.stream;
 
 			buf += 4;
 			f->md.prio.weight = *buf;
@@ -791,9 +791,9 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			return NULL;
 		}
 	}
-	else if (!strcmp(spec, "stream.stream")) {
+	else if (!strcmp(spec, "stream.dependency")) {
 		if (s->id) {
-			snprintf(buf, 20, "%d", s->stream);
+			snprintf(buf, 20, "%d", s->dependency);
 			return (buf);
 		} else {
 			return NULL;
@@ -1094,9 +1094,9 @@ cmd_tx11obj(CMD_ARGS)
 			f.flags &= ~END_STREAM;
 		} else if (!strcmp(*av, "-nohdrend")) {
 			f.flags &= ~END_HEADERS;
-		} else if (!strcmp(*av, "-stream")) {
+		} else if (!strcmp(*av, "-dependency")) {
 		        av++;
-		        STRTOU32(stid, *av, p, vl, "-stream");
+		        STRTOU32(stid, *av, p, vl, "-dependency");
 		        f.flags |= PRIORITY;
 		} else if (!strcmp(*av, "-exclusive")) {
 		        exclusive = 1 << 31;
@@ -1130,7 +1130,7 @@ cmd_tx11obj(CMD_ARGS)
 	f.size = gethpk_iterLen(iter);
 	if (f.flags & PRIORITY){
 		s->weight = weight & 0xff;
-		s->stream = stid;
+		s->dependency = stid;
 
 	        memmove(buf + 5, buf, f.size);
 		*(uint32_t *)ubuf = htonl(stid | exclusive);
@@ -1262,7 +1262,7 @@ cmd_txprio(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown txprio spec: %s\n", *av);
 	s->weight = weight & 0xff;
-	s->stream = stid;
+	s->dependency = stid;
 
 	if(exclusive){
 		exclusive_stream_dependency(s);
@@ -1844,7 +1844,7 @@ stream_new(const char *name, struct http2 *h)
 	s->ws = 0xffff;
 
 	s->weight = 16;
-	s->stream = 0;
+	s->dependency = 0;
 
 	STRTOU32(s->id, name, p, h->vl, "-some");
 	if (s->id & (1 << 31))
