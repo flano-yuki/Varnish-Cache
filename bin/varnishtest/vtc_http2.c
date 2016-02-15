@@ -1139,9 +1139,9 @@ cmd_tx11obj(CMD_ARGS)
 
 		vtc_log(s->hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 		vtc_log(s->hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
-	}
-	if (exclusive){
-		exclusive_stream_dependency(s);
+		if (exclusive){
+			exclusive_stream_dependency(s);
+		}
 	}
 	f.data = buf;	
 	HPK_FreeIter(iter);
