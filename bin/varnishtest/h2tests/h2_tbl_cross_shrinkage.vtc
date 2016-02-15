@@ -1,0 +1,41 @@
+varnishtest "Reduce dynamic table while incoming headers are flying"
+
+h2server s1 {
+        stream 1 {
+                rxreq
+                txresp -litHdr inc plain hoge plain fuga
+                expect outtable[1].key == "hoge"
+                expect outtable[1].value == "fuga"
+                expect outtable.size == 40
+
+        } -run
+
+
+        stream 3 {
+		rxreq
+                txresp -idxHdr 62 -litHdr inc plain "foo" plain "bar" 
+        } -run
+
+        stream 0 { rxsettings	} -run
+} -start
+
+h2client c1 -connect ${s1_sock} {
+        stream 1 {
+                txreq
+                rxresp
+                expect intable[1].key == "hoge"
+                expect intable[1].value == "fuga"
+                expect intable.size == 40
+                expect intable.length == 1
+        } -run
+
+        stream 3 { txreq		} -run 
+        stream 0 { txsettings -hdrtbl 0 } -run
+
+	non-fatal
+        stream 3 {
+		rxresp
+		expect resp.http.foo == <undef>
+	} -run
+
+} -run

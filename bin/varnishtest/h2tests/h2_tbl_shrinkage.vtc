@@ -1,0 +1,52 @@
+varnishtest "Reduce dynamic table size"
+
+h2server s1 {
+        stream 1 {
+                rxreq
+                txresp  -litHdr inc plain hoge plain fuga
+                expect intable.size == 57
+                expect outtable.size == 40
+        } -run
+
+        stream 0 {
+                rxsettings
+                txsettings -ack
+        } -run
+
+        stream 3 {
+                rxreq
+                expect intable.size == 110
+                expect outtable.size == 0
+                txresp
+        } -run
+} -start
+
+h2client c1 -connect ${s1_sock} {
+        stream 1 {
+                txreq -idxHdr 2 \
+                        -idxHdr 6 \
+                        -idxHdr 4 \
+                        -litIdxHdr inc 1 huf "www.example.com"
+                rxresp
+                expect intable.size == 40
+                expect outtable.size == 57
+        } -run
+
+        stream 0 {
+                txsettings -hdrtbl 0
+                rxsettings
+        } -run
+
+        stream 3 {
+                txreq -idxHdr 2 \
+                        -idxHdr 6 \
+                        -idxHdr 4 \
+                        -idxHdr 62 \
+                        -litIdxHdr inc 24 huf no-cache
+                expect outtable.size == 110
+                expect intable.size == 0
+                rxresp
+        } -run
+} -run
+
+h2server s1 -wait
