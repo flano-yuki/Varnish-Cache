@@ -471,7 +471,7 @@ receive_frame(void *priv) {
 			}
 			//XXX document too many headers errors
 			if (r != hpk_done)
-				vtc_log(hp->vl, 0, "Header decoding failed");
+				vtc_log(hp->vl, hp->fatal, "Header decoding failed");
 			HPK_FreeIter(iter);
 		} else if (f->type == TYPE_PRIORITY) {
 			char *buf;
@@ -1715,8 +1715,6 @@ static const struct cmds stream_cmds[] = {
 	//expect_close
 	//close
 	//accept
-	{ "fatal",		cmd_fatal },
-	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
 };
 
@@ -1893,6 +1891,8 @@ cmd_stream(CMD_ARGS)
 static const struct cmds http2_cmds[] = {
 	{ "stream",		cmd_stream },
 	{ "delay",		cmd_delay },
+	{ "fatal",		cmd_fatal },
+	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
 };
 
