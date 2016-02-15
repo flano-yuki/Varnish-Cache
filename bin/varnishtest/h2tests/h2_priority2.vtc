@@ -1,0 +1,63 @@
+varnishtest "exclusive dependency"
+
+h2server s1 {        
+	stream 1 {
+		rxreq
+		txresp
+	} -run
+	stream 3 {
+		rxreq
+		txresp
+	} -run
+	stream 5 {
+		rxreq
+		txresp
+		expect stream.dependency == 0
+	} -run
+
+	stream 1 {
+		expect stream.dependency == 5
+	} -run
+	stream 3 {
+		expect stream.dependency == 5
+	} -run
+
+	stream 1 {
+		rxprio
+	} -run
+	stream 5 {
+		expect stream.dependency == 1
+	} -run
+
+} -start
+h2client c1 -connect ${s1_sock} {
+	stream 1 {
+		txreq
+		rxresp
+	} -run
+	stream 3 {
+		txreq
+		rxresp
+	} -run
+	stream 5 {
+		txreq -req GET -exclusive
+		expect stream.dependency == 0
+		rxresp
+	} -run
+
+	stream 1 {
+		expect stream.dependency == 5
+	} -run
+	stream 3 {
+		expect stream.dependency == 5
+	} -run
+
+	stream 1 {
+		txprio -stream 0 -exclusive
+	} -run
+	stream 5 {
+		expect stream.dependency == 1
+	} -run
+} -run
+
+h2server s1 -wait
