@@ -29,7 +29,7 @@ h2client c1 -connect ${s1_sock} {
 	} -run
 	stream 3 {
 		txreq -req GET -url /3 -hdr :scheme http -hdr :authority localhost \
-			-weight 123 -exclusive -dependency 5
+			-weight 123 -ex -dep 5
 		rxresp
 		expect stream.weight == 123
 		expect stream.dependency == 5

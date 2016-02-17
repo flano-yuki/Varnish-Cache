@@ -40,7 +40,7 @@ h2client c1 -connect ${s1_sock} {
 		rxresp
 	} -run
 	stream 5 {
-		txreq -req GET -exclusive
+		txreq -req GET -ex
 		expect stream.dependency == 0
 		rxresp
 	} -run
@@ -53,7 +53,7 @@ h2client c1 -connect ${s1_sock} {
 	} -run
 
 	stream 1 {
-		txprio -stream 0 -exclusive
+		txprio -stream 0 -ex
 	} -run
 	stream 5 {
 		expect stream.dependency == 1

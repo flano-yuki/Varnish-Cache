@@ -475,22 +475,23 @@ receive_frame(void *priv) {
 		} else if (f->type == TYPE_HEADERS || f->type == TYPE_CONT) {
 			struct hpk_iter *iter;
 			enum hpk_result r = hpk_err;
-			int delta = 0;
+			int shift = 0;
 			int exclusive = 0;
+			int n;
 			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
-				delta = 5;
-				s->dependency = ntohl(*(uint32_t*)f->data) & ~(1 << 31);
-				if (ntohl(*(uint32_t*)f->data) & (1 << 31)) {
-					exclusive = 1;
-				}
+				shift = 5;
+				n = ntohl(*(uint32_t*)f->data);
+				s->dependency = n & ~(1 << 31);
+				exclusive = n >> 31;
+
 				s->weight = f->data[4];
-				if (exclusive) {
+				if (exclusive)
 					exclusive_stream_dependency(s);
-				}
+
 				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 			}
-			iter = HPK_NewIter(s->hp->inctx, f->data + delta, f->size - delta);
+			iter = HPK_NewIter(s->hp->inctx, f->data + shift, f->size - shift);
 
 			while (s->nhdrs < MAX_HDR) {
 				r = HPK_DecHdr(iter, s->hdrs + s->nhdrs);
@@ -514,17 +515,18 @@ receive_frame(void *priv) {
 			HPK_FreeIter(iter);
 		} else if (f->type == TYPE_PRIORITY) {
 			char *buf;
+			int n;
 			if (f->size != 5)
 				vtc_log(hp->vl, 0, "Size should be 5, but isn't (%d)", f->size);
 
 			buf = f->data;
 			AN(buf);
 
-			f->md.prio.stream = ntohl(*(uint32_t*)f->data);
+			n = ntohl(*(uint32_t*)f->data);
+			f->md.prio.stream = n & ~(1 << 31);
 
-			f->md.prio.stream &= ~(1 << 31);
 			s->dependency = f->md.prio.stream;
-			if (ntohl(*(uint32_t*)f->data) & (1 << 31)){
+			if (n >> 31){
 				f->md.prio.exclusive = 1;
 				exclusive_stream_dependency(s);
 			}
@@ -1100,11 +1102,11 @@ cmd_tx11obj(CMD_ARGS)
 			f.flags &= ~END_STREAM;
 		} else if (!strcmp(*av, "-nohdrend")) {
 			f.flags &= ~END_HEADERS;
-		} else if (!strcmp(*av, "-dependency")) {
+		} else if (!strcmp(*av, "-dep")) {
 		        av++;
-		        STRTOU32(stid, *av, p, vl, "-dependency");
+		        STRTOU32(stid, *av, p, vl, "-dep");
 		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-exclusive")) {
+		} else if (!strcmp(*av, "-ex")) {
 		        exclusive = 1 << 31;
 		        f.flags |= PRIORITY;
 		} else if (!strcmp(*av, "-weight")) {
@@ -1145,9 +1147,8 @@ cmd_tx11obj(CMD_ARGS)
 
 		vtc_log(s->hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 		vtc_log(s->hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
-		if (exclusive){
+		if (exclusive)
 			exclusive_stream_dependency(s);
-		}
 	}
 	f.data = buf;	
 	HPK_FreeIter(iter);
@@ -1253,7 +1254,7 @@ cmd_txprio(CMD_ARGS)
 		if (!strcmp(*av, "-stream")) {
 			av++;
 			STRTOU32(stid, *av, p, vl, "-stream");
-		} else if (!strcmp(*av, "-exclusive")) {
+		} else if (!strcmp(*av, "-ex")) {
 			exclusive = 1 << 31;
 		} else if (!strcmp(*av, "-weight")) {
 			av++;
@@ -1270,9 +1271,8 @@ cmd_txprio(CMD_ARGS)
 	s->weight = weight & 0xff;
 	s->dependency = stid;
 
-	if(exclusive){
+	if(exclusive)
 		exclusive_stream_dependency(s);
-	}
 
 	*ubuf = htonl(stid | exclusive);
 	buf[4] = s->weight;
