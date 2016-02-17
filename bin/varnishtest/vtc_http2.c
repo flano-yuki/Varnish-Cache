@@ -963,6 +963,7 @@ cmd_tx11obj(CMD_ARGS)
 	int status_done = 1;
 	int req_done = 1;
 	int url_done = 1;
+	int scheme_done = 1;
 	uint32_t stid = 0;
 	uint32_t weight = 16;
 	int exclusive = 0;
@@ -987,6 +988,7 @@ cmd_tx11obj(CMD_ARGS)
 		if (!strcmp(cmd_str, "txreq")) {
 			req_done = 0;
 			url_done = 0;
+			scheme_done = 0;
 		} else {
 			status_done = 0;
 		}
@@ -1002,7 +1004,12 @@ cmd_tx11obj(CMD_ARGS)
 		hdr.value.huff = 0;
 		hdr.value.ptr = NULL;
 		hdr.value.len = 0;
-		if (!strcmp(*av, "-status") &&
+		if (!strcmp(*av, "-noadd")) {
+			url_done = 1;
+			status_done = 1;
+			req_done = 1;
+			scheme_done = 1;
+		} else if (!strcmp(*av, "-status") &&
 				!strcmp(cmd_str, "txresp")) {
 			ENC(hdr, ":status", av[1]);
 			av++;
@@ -1017,6 +1024,11 @@ cmd_tx11obj(CMD_ARGS)
 			ENC(hdr, ":method", av[1]);
 			av++;
 			req_done = 1;
+		} else if (!strcmp(*av, "-scheme") &&
+				!strcmp(cmd_str, "txreq")) {
+			ENC(hdr, ":scheme", av[1]);
+			av++;
+			scheme_done = 1;
 		} else if (!strcmp(*av, "-hdr")) {
 			ENC(hdr, av[1], av[2]);
 			av += 2;
@@ -1128,12 +1140,14 @@ cmd_tx11obj(CMD_ARGS)
 	hdr.key.huff = 0;
 	hdr.value.huff = 0;
 
-	if (!status_done) {
+	if (!status_done)
 		ENC(hdr, ":status", "200");
-	} if (!url_done)
+	if (!url_done)
 		ENC(hdr, ":path", "/");
 	if (!req_done)
 		ENC(hdr, ":method", "GET");
+	if (!scheme_done)
+		ENC(hdr, ":scheme", "http");
 
 	f.size = gethpk_iterLen(iter);
 	if (f.flags & PRIORITY){
