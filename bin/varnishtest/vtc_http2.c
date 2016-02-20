@@ -135,7 +135,7 @@ struct stream {
 	pthread_t		tp;
 	unsigned		reading;
 	struct http2		*hp;
-	uint64_t		ws;
+	int64_t			ws;
 
 	VTAILQ_HEAD(, frame)   fq;
 
@@ -166,7 +166,8 @@ struct http2 {
 	pthread_cond_t          cond;
 	struct hpk_ctx		*outctx;
 	struct hpk_ctx		*inctx;
-	uint64_t		ws;
+	uint64_t		iws;
+	int64_t			ws;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -1307,7 +1308,7 @@ cmd_txprio(CMD_ARGS)
 static void
 cmd_txsettings(CMD_ARGS)
 {
-	struct stream *s;
+	struct stream *s, *target;
 	struct http2 *hp;
 	char *p;
 	uint32_t val = 0;
@@ -1349,6 +1350,11 @@ cmd_txsettings(CMD_ARGS)
 		}
 		else if (!strcmp(*av, "-winsize"))	{
 			PUT_KV(vl, winsize, val, 0x4);
+
+			VTAILQ_FOREACH(target, &hp->streams, list) {
+        			target->ws += (val - hp->iws);
+			}
+			hp->iws = val;
 		}
 		else if (!strcmp(*av, "-framesize"))	{
 			PUT_KV(vl, framesize, val, 0x5);
@@ -1861,7 +1867,7 @@ stream_new(const char *name, struct http2 *h)
 	pthread_cond_init(&s->cond, NULL);
 	REPLACE(s->name, name);
 	VTAILQ_INIT(&s->fq);
-	s->ws = 0xffff;
+	s->ws = h->iws;
 
 	s->weight = 16;
 	s->dependency = 0;
@@ -2031,6 +2037,7 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	hp->timeout = vtc_maxdur * 1000 / 2;
 	hp->sfd = sfd;
 	hp->vl = vl;
+	hp->iws = 0xffff;
 	hp->ws = 0xffff;
 
 	hp->running = 1;
