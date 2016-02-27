@@ -1351,10 +1351,11 @@ cmd_txsettings(CMD_ARGS)
 		else if (!strcmp(*av, "-winsize"))	{
 			PUT_KV(vl, winsize, val, 0x4);
 
-			VTAILQ_FOREACH(target, &hp->streams, list) {
+			AZ(pthread_mutex_lock(&hp->mtx));
+			VTAILQ_FOREACH(target, &hp->streams, list)
         			target->ws += (val - hp->iws);
-			}
 			hp->iws = val;
+			AZ(pthread_mutex_unlock(&hp->mtx));
 		}
 		else if (!strcmp(*av, "-framesize"))	{
 			PUT_KV(vl, framesize, val, 0x5);
