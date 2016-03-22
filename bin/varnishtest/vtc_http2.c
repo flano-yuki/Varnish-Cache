@@ -682,7 +682,7 @@ receive_frame(void *priv) {
 
 #define RETURN_SETTINGS(idx) \
 { \
-	if isnan(f->md.settings[idx]) { \
+	if (isnan(f->md.settings[idx])) { \
 		return (NULL); \
 	} \
 	snprintf(buf, 20, "%.0f", f->md.settings[idx]); \
