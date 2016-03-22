@@ -50,6 +50,34 @@
 #include "vtcp.h"
 #include "hpack.h"
 
+/* SECTION: h2.both H/2 clients and servers
+ *
+ * Clients and servers are very similar in semantics under H/2 (mainly because
+ * they just encapsulate H/1 that isn't that symetrical). For this reason, both
+ * entities are described here under the same section.
+ *
+ * Both are described and handled in a similar manner:
+ *
+ * * h2client cNAME [SPEC] [ACTION]
+ * * h2server sNAME [SPEC] [ACTION]
+ *
+ * Names cNAME (sname) must start by "c" ("s").
+ *
+ * SPEC is a string describing the actions undertaken by the entity, and is
+ * mostly composed of streams declaration and management. The string can be
+ * quoted "like this" for single line statements, or enclosed in curly brackets
+ * for multi-line confort.
+ *
+ * ACTION can be:
+ *
+ * * -start: start a thread of the entity and continue parsing the specification
+ *   immediately
+ * * -wait: block until the thread returns
+ * * -run: equivalent to calling -run then -wait
+ * * -break: stop the running entity
+ *
+ */
+
 #define MAX_HDR		50
 
 #define ERR_MAX 13
@@ -1210,7 +1238,17 @@ cmd_txdata(CMD_ARGS)
 	write_frame(s->hp, &f);
 	free(body);
 }
-
+/* SECTION: h2.both.streams.txrst txrst
+ *
+ * The RST_STREAM frame (rfc7540#6.4) terminates a stream, and embed an error
+ * code to inform the other end of the reason for the termination.
+ *
+ * The only possible argument is ``err`` and sets the error code. It can be an
+ * integer or a string describing the error, such as NO_ERROR, or CANCEL (see
+ * rfc7540#11.4 for more strings).
+ *
+ * By default, txrst will send a 0 error code (NO_ERROR).
+ */
 static void
 cmd_txrst(CMD_ARGS)
 {
@@ -1246,6 +1284,19 @@ cmd_txrst(CMD_ARGS)
 	write_frame(s->hp, &f);
 }
 
+/* SECTION: h2.both.streams.txprio txprio
+ * 
+ * The PRIORITY (rfc7540#6.3) allows the client to define a priority between
+ * streams that the server is free to follow or not.
+ *
+ * Possible arguments are:
+ *
+ * * -stream INT: indicate the id of the stream the sender stream depends on
+ * * -ex: the dependency should be made exclusive (only this streams depends on
+ *   the parent stream)
+ * * -weight INT: an 8-bits integer is used to balance priority between streams
+ *   depending on the same streams. 
+ */
 static void
 cmd_txprio(CMD_ARGS)
 {
@@ -1304,6 +1355,22 @@ cmd_txprio(CMD_ARGS)
 		f.size += 6; \
 	} while(0)
 
+/* SECTION: h2.both.streams.txsettings txsettings
+ * 
+ * SETTINGS frames (rfc7540#6.5) are used to announce the conditions of the
+ * transactions to the peer.
+ *
+ * SETTINGS frames must be acknowledge, arguments are as follow (most of them
+ * are from  rfc7540#6.5.2):
+ *
+ * * -hdrtbl INT: headers table size
+ * * -push BOOL: whether push frames are accepted or not
+ * * -maxstreams INT: maximum concurrent streams allowed
+ * * -winsize INT: sender's initial window size
+ * * -framesize INT: largest frame size authorized
+ * * -hdrsize INT: maximum size of the header list authorized
+ * * -ack: set the ack bit
+ */
 static void
 cmd_txsettings(CMD_ARGS)
 {
@@ -1946,6 +2013,23 @@ stream_run(struct stream *s)
 
 /**********************************************************************
  * Client command dispatch
+ */
+
+/* SECTION: h2.both.streams Streams
+ *
+ * Streams map roughly to a request in H/2, a request is sent on stream N,
+ * the response too, then the stream is discarded. The main exception is the
+ * first stream, 0, that serves as coordinator.
+ *
+ * Stream syntax follow the client/server one:
+ *
+ * * stream ID [SPEC] [ACTION]
+ *
+ * ID is the H/2 stream number, while SPEC describes what will be done in that
+ * stream.
+ *
+ * ACTION can be -start, -wait or -run, with the same meanings as for
+ * client/server
  */
 
 static void
