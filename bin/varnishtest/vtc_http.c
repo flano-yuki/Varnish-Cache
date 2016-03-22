@@ -76,6 +76,8 @@ struct http {
 	int			gzipresidual;
 
 	int			fatal;
+
+	int			h2;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -229,6 +231,11 @@ cmd_var_resolve(struct http *hp, char *spec)
 	} else if (!memcmp(spec, "resp.http.", 10)) {
 		hh = hp->resp;
 		hdr = spec + 10;
+	} else if (!strcmp(spec, "h2.state")) {
+		if (hp->h2)
+			return ("true");
+		else
+			return ("false");
 	} else
 		return (spec);
 	hdr = http_find_header(hh, hdr);
@@ -413,8 +420,8 @@ http_rxchar(struct http *hp, int n, int eof)
 			return (i);
 		if (i == 0)
 			vtc_log(hp->vl, hp->fatal,
-			    "HTTP rx EOF (fd:%d read: %s)",
-			    hp->fd, strerror(errno));
+			    "HTTP rx EOF (fd:%d read: %s) %d",
+			    hp->fd, strerror(errno), n);
 		if (i < 0)
 			vtc_log(hp->vl, hp->fatal,
 			    "HTTP rx failed (fd:%d read: %s)",
@@ -1326,6 +1333,51 @@ cmd_http_fatal(CMD_ARGS)
 	}
 }
 
+char PREFACE[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+
+/* SECTION: h1.client.txpri txpri
+ *
+ * Send an H/2 preface ("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") and set client to
+ * H/2.
+ */
+static void
+cmd_http_txpri(CMD_ARGS)
+{
+	size_t l;
+	struct http *hp;
+	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
+	ONLY_CLIENT(hp, av);
+
+	vtc_dump(hp->vl, 4, "txpri", PREFACE, sizeof(PREFACE) - 1);
+	l = write(hp->fd, PREFACE, sizeof(PREFACE) - 1);
+	if (l != sizeof(PREFACE) - 1)
+		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
+		    l, sizeof(PREFACE) - 1, strerror(errno));
+	hp->h2 = 1;
+}
+
+/* SECTION: h1.server.rxpri rxpri
+ *
+ * Receive a preface, and if it matches, sets the server to H/2, abort fails
+ * otherwise.
+ */
+static void
+cmd_http_rxpri(CMD_ARGS)
+{
+	struct http *hp;
+	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
+	ONLY_SERVER(hp, av);
+
+	hp->prxbuf = 0;
+	if (!http_rxchar(hp, sizeof(PREFACE) - 1, 0))
+		vtc_log(hp->vl, 0, "Couldn't retrieve connection preface\n");
+	else if (strncmp(hp->rxbuf, PREFACE, sizeof(PREFACE) - 1))
+		vtc_log(hp->vl, 0, "Received invalid preface\n");
+	else
+		hp->h2 = 1;
+}
+
+
 /**********************************************************************
  * Execute HTTP specifications
  */
@@ -1360,6 +1412,9 @@ static const struct cmds http_cmds[] = {
 	{ "loop",		cmd_http_loop },
 	{ "fatal",		cmd_http_fatal },
 	{ "non-fatal",		cmd_http_fatal },
+
+	{ "rxpri",		cmd_http_rxpri},
+	{ "txpri",		cmd_http_txpri},
 	{ NULL,			NULL }
 };
 
