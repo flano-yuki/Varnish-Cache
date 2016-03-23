@@ -2081,6 +2081,4 @@ stop_h2(struct http *hp)
 
 	HPK_FreeCtx(hp->inctx);
 	HPK_FreeCtx(hp->outctx);
-
-	free(hp);
 }
