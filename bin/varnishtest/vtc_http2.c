@@ -1160,6 +1160,20 @@ cmd_tx11obj(CMD_ARGS)
 	free(body);
 }
 
+/* SECTION: h2.streams.data Data
+ *
+ * In H/2, content is transported using DATA(rfc7540#6.1), removing the need for
+ * chunked encoding for example.
+ */
+/* SECTION: h2.streams.data.txdata txdata
+ *
+ * By default, data frames are empty, but you can, specify the argument
+ * ``-data STRING`` to fill it with arbitrary content.
+ *
+ * The receiving end will know the whole body has been delivered thanks to the
+ * END_STREAM flag set in the last DATA frame. txdata automatically set it, and
+ * you can disable it using ``
+ */
 static void
 cmd_txdata(CMD_ARGS)
 {
@@ -1192,6 +1206,7 @@ cmd_txdata(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 	free(body);
 }
+
 /* SECTION: h2.both.streams.txrst txrst
  *
  * The RST_STREAM frame (rfc7540#6.4) terminates a stream, and embed an error
@@ -1634,6 +1649,16 @@ cmd_rxcont(CMD_ARGS)
 }
 
 
+/* SECTION: h2.streams.data.rxdata rxdata
+ *
+ * Receiving data is done using the ``rxdata`` keywords and will retrieve one
+ * DATA frame, if you wish to receive more, you can use these two convenience
+ * arguments:
+ *
+ * * -all: keep waiting for DATA frame until one sets the END_STREAM flag
+ * * -some INT: retrieve INT DATA frames.
+ *
+ */
 static void
 cmd_rxdata(CMD_ARGS)
 {
