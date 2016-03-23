@@ -15,6 +15,7 @@ $0 ~ "[ /]* SECTION: " {
 }
 
 END {
+	print ".. contents::\n";
 	asort(sl);
 	for (i in sl) {
 		section = sl[i]
