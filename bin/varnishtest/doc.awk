@@ -2,7 +2,7 @@ $0 ~ "*/" {
 	p = 0;
 }
 
-p {
+p && $0 !~ "[ /]* SECTION: " {
 	#cl[section] += gensub(/ * \?/, "", "g", $0);
 	cl[section] = cl[section]  gensub(/ \* ?/, "", "1", $0) "\n";
 }
