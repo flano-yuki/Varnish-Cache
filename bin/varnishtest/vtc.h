@@ -65,9 +65,6 @@ cmd_f cmd_sema;
 cmd_f cmd_logexp;
 cmd_f cmd_process;
 
-cmd_f cmd_h2server;
-cmd_f cmd_h2client;
-
 extern volatile sig_atomic_t vtc_error; /* Error, bail out */
 extern int vtc_stop;		/* Abandon current test, no error */
 extern pthread_t	vtc_thread;
@@ -108,3 +105,10 @@ struct vsb *macro_expand(struct vtclog *vl, const char *text);
 
 void extmacro_def(const char *name, const char *fmt, ...)
     __v_printflike(2, 3);
+
+struct http;
+extern const struct cmds http_cmds[];
+void cmd_stream(CMD_ARGS);
+struct http2 *start_h2(int fd, int *sfd, struct vtclog *vl,
+		unsigned nosettings);
+void stop_h2(struct http2 *hp);

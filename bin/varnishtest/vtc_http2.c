@@ -885,34 +885,6 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	return(NULL);
 }
 
-
-char pri_string[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
-
-static void
-cmd_http_txpri(CMD_ARGS)
-{
-	struct http2 *hp;
-	(void)cmd;
-	(void)av;
-	(void)vl;
-	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
-	http_write(hp, 4, pri_string, sizeof(pri_string) - 1, "txpri");
-}
-
-static void
-cmd_http_rxpri(CMD_ARGS)
-{
-	struct http2 *hp;
-	char buf[sizeof(pri_string)];
-	(void)cmd;
-	(void)av;
-	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
-
-	(void)get_bytes(hp, buf, sizeof(pri_string) - 1);
-	if (strncmp(pri_string, buf, strlen(pri_string) - 1))
-		vtc_log(vl, hp->fatal, "HTTP rxpri failed");
-}
-
 static void
 cmd_txframe(CMD_ARGS)
 {
@@ -2032,12 +2004,12 @@ stream_run(struct stream *s)
  * client/server
  */
 
-static void
+void
 cmd_stream(CMD_ARGS)
 {
 	struct stream *s, *s2;
+	struct http2 *h;
 
-	struct http2 *h = (struct http2 *)priv;
 	(void)cmd;
 	(void)vl;
 	CAST_OBJ_NOTNULL(h, priv, HTTP2_MAGIC);
@@ -2090,56 +2062,43 @@ cmd_stream(CMD_ARGS)
 }
 
 static const struct cmds http2_cmds[] = {
-	{ "stream",		cmd_stream },
 	{ "delay",		cmd_delay },
 	{ "fatal",		cmd_fatal },
 	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
 };
 
-int
-http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
+struct http2 *
+start_h2(int fd, int *sfd, struct vtclog *vl,
 		unsigned nosettings)
 {
+	struct http2 *h2;
+
+	ALLOC_OBJ(h2, HTTP2_MAGIC);
+	AN(h2);
+	pthread_mutex_init(&h2->mtx, NULL);
+	pthread_cond_init(&h2->cond, NULL);
+	VTAILQ_INIT(&h2->streams);
+	h2->fd = fd;
+	h2->sfd = sfd;
+	h2->timeout = vtc_maxdur * 1000 / 2;
+	h2->vl = vl;
+	h2->ws = 0xffff;
+
+	h2->running = 1;
+
+	h2->inctx = HPK_NewCtx(4096);
+	h2->outctx = HPK_NewCtx(4096);
+	AZ(pthread_create(&h2->tp, NULL, receive_frame, h2));
+
+	return (h2);
+}
+
+void
+stop_h2(struct http2 *hp)
+{
 	struct stream *s;
-	struct http2 *hp;
-	int retval;
-
-	(void)sfd;
-	ALLOC_OBJ(hp, HTTP2_MAGIC);
-	AN(hp);
-	pthread_mutex_init(&hp->mtx, NULL);
-	pthread_cond_init(&hp->cond, NULL);
-	VTAILQ_INIT(&hp->streams);
-	hp->fd = sock;
-	hp->timeout = vtc_maxdur * 1000 / 2;
-	hp->sfd = sfd;
-	hp->vl = vl;
-	hp->ws = 0xffff;
-
-	hp->running = 1;
-	if (sfd) {
-		cmd_http_rxpri(NULL, hp, NULL, vl);
-	} else  {
-		cmd_http_txpri(NULL, hp, NULL, vl);
-	}
-	hp->inctx = HPK_NewCtx(4096);
-	hp->outctx = HPK_NewCtx(4096);
-	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
-
-	if (!nosettings) {
-			vtc_log(vl, 3, "============parsing extra stuff");
-		parse_string("stream 0 {\n"
-				"txsettings\n"
-				"rxsettings\n"
-				"txsettings -ack\n"
-				"rxsettings\n"
-				"expect settings.ack == true"
-			     "} -run\n", http2_cmds, hp, vl);
-	}
-
-	parse_string(spec, http2_cmds, hp, vl);
-
+	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
 	VTAILQ_FOREACH(s, &hp->streams, list) {
 		while (s->running)
 			stream_wait(s);
@@ -2155,7 +2114,5 @@ http2_process(struct vtclog *vl, const char *spec, int sock, int *sfd,
 	HPK_FreeCtx(hp->inctx);
 	HPK_FreeCtx(hp->outctx);
 
-	retval = hp->fd;
 	free(hp);
-	return (retval);
 }

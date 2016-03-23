@@ -77,7 +77,7 @@ struct http {
 
 	int			fatal;
 
-	int			h2;
+	struct http2		*h2;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -1353,7 +1353,18 @@ cmd_http_txpri(CMD_ARGS)
 	if (l != sizeof(PREFACE) - 1)
 		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
 		    l, sizeof(PREFACE) - 1, strerror(errno));
-	hp->h2 = 1;
+	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
+	AN(hp->h2);
+	//if (!nosettings) {
+		vtc_log(vl, 3, "============parsing extra stuff");
+		parse_string("stream 0 {\n"
+				"txsettings\n"
+				"rxsettings\n"
+				"txsettings -ack\n"
+				"rxsettings\n"
+				"expect settings.ack == true"
+			     "} -run\n", http_cmds, hp, vl);
+	//}
 }
 
 /* SECTION: h1.server.rxpri rxpri
@@ -1371,18 +1382,39 @@ cmd_http_rxpri(CMD_ARGS)
 	hp->prxbuf = 0;
 	if (!http_rxchar(hp, sizeof(PREFACE) - 1, 0))
 		vtc_log(hp->vl, 0, "Couldn't retrieve connection preface\n");
-	else if (strncmp(hp->rxbuf, PREFACE, sizeof(PREFACE) - 1))
+	if (strncmp(hp->rxbuf, PREFACE, sizeof(PREFACE) - 1))
 		vtc_log(hp->vl, 0, "Received invalid preface\n");
-	else
-		hp->h2 = 1;
+	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
+	AN(hp->h2);
+	//if (!nosettings) {
+		vtc_log(vl, 3, "============parsing extra stuff");
+		parse_string("stream 0 {\n"
+				"txsettings\n"
+				"rxsettings\n"
+				"txsettings -ack\n"
+				"rxsettings\n"
+				"expect settings.ack == true"
+			     "} -run\n", http_cmds, hp, vl);
+	//}
 }
 
+/* SECTION: h1.both.stream stream
+ *
+ */
+static void
+cmd_http_stream(CMD_ARGS)
+{
+	struct http *hp = (struct http *)priv;
+		vtc_log(hp->vl, 4, "magic is 0x%x\n", hp->magic);
+	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
+	cmd_stream(av, hp->h2, cmd, vl);
+}
 
 /**********************************************************************
  * Execute HTTP specifications
  */
 
-static const struct cmds http_cmds[] = {
+const struct cmds http_cmds[] = {
 	{ "timeout",		cmd_http_timeout },
 	{ "txreq",		cmd_http_txreq },
 
@@ -1413,8 +1445,9 @@ static const struct cmds http_cmds[] = {
 	{ "fatal",		cmd_http_fatal },
 	{ "non-fatal",		cmd_http_fatal },
 
-	{ "rxpri",		cmd_http_rxpri},
-	{ "txpri",		cmd_http_txpri},
+	{ "rxpri",		cmd_http_rxpri },
+	{ "txpri",		cmd_http_txpri },
+	{ "stream",		cmd_http_stream },
 	{ NULL,			NULL }
 };
 
