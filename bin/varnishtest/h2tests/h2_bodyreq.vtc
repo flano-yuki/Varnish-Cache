@@ -1,11 +1,17 @@
-h2server s1 {
+varnishtest "Simple request with body"
+
+server s1 {
+	rxpri
+
 	stream 1 {
 		rxreq
 		txresp -body "bob"
 	} -run
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
+	txpri
+
 	stream 1 {
 		txreq
 		rxresp
