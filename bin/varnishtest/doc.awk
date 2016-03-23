@@ -7,10 +7,10 @@ p {
 	cl[section] = cl[section]  gensub(/ \* ?/, "", "1", $0) "\n";
 }
 
-$0 ~ "/* SECTION: " {
+$0 ~ "[ /]* SECTION: " {
 	section = $3;
 	sl[len++] = section;
-	tl[section] = gensub(/^\/\* SECTION: [^ ]+ +/, "", "1", $0);
+	tl[section] = gensub(/^[\/ ]\* SECTION: [^ ]+ +/, "", "1", $0);
 	p = 1;
 }
 
