@@ -1,7 +1,5 @@
 varnishtest "Static table encoding"
 server s1 {
-	rxpri
-
 	stream 1 {
 		rxreq
 		expect req.http.:path == "/index.html"
@@ -11,8 +9,6 @@ server s1 {
 } -start
 
 client c1 -connect ${s1_sock} {
-	txpri
-
 	stream 1 {
 
 		txreq -idxHdr 2 \

@@ -1355,16 +1355,6 @@ cmd_http_txpri(CMD_ARGS)
 		    l, sizeof(PREFACE) - 1, strerror(errno));
 	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
 	AN(hp->h2);
-	//if (!nosettings) {
-		vtc_log(vl, 3, "============parsing extra stuff");
-		parse_string("stream 0 {\n"
-				"txsettings\n"
-				"rxsettings\n"
-				"txsettings -ack\n"
-				"rxsettings\n"
-				"expect settings.ack == true"
-			     "} -run\n", http_cmds, hp, vl);
-	//}
 }
 
 /* SECTION: h1.server.rxpri rxpri
@@ -1386,16 +1376,6 @@ cmd_http_rxpri(CMD_ARGS)
 		vtc_log(hp->vl, 0, "Received invalid preface\n");
 	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
 	AN(hp->h2);
-	//if (!nosettings) {
-		vtc_log(vl, 3, "============parsing extra stuff");
-		parse_string("stream 0 {\n"
-				"txsettings\n"
-				"rxsettings\n"
-				"txsettings -ack\n"
-				"rxsettings\n"
-				"expect settings.ack == true"
-			     "} -run\n", http_cmds, hp, vl);
-	//}
 }
 
 static void
@@ -1403,8 +1383,20 @@ cmd_http_stream(CMD_ARGS)
 {
 	struct http *hp = (struct http *)priv;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
-	if (!hp->h2)
-		vtc_log(hp->vl, 0, "stream must be called in an H/2 context\n");
+	if (!hp->h2) {
+		vtc_log(hp->vl, 4, "Not in H/2 mode node, do what's needed\n");
+		if (hp->sfd)
+			parse_string("rxpri", http_cmds, hp, vl);
+		else
+			parse_string("txpri", http_cmds, hp, vl);
+		parse_string("stream 0 {\n"
+				"txsettings\n"
+				"rxsettings\n"
+				"txsettings -ack\n"
+				"rxsettings\n"
+				"expect settings.ack == true"
+			     "} -run\n", http_cmds, hp, vl);
+	}
 	cmd_stream(av, hp->h2, cmd, vl);
 }
 

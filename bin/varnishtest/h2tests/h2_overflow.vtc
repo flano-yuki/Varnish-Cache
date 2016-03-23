@@ -1,8 +1,6 @@
 varnishtest "overflow"
 
 server s1 {
-	rxpri
-
 	stream 1 {
 		rxreq
 		txresp -hdr long-header-original1 original1 \
@@ -13,8 +11,6 @@ server s1 {
 } -start
 
 client c1  -connect ${s1_sock} {
-	txpri
-
 	stream 1 {
 		txreq -req GET \
 			-url / \
