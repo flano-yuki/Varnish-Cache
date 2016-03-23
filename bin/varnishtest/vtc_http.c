@@ -1402,8 +1402,9 @@ static void
 cmd_http_stream(CMD_ARGS)
 {
 	struct http *hp = (struct http *)priv;
-		vtc_log(hp->vl, 4, "magic is 0x%x\n", hp->magic);
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
+	if (!hp->h2)
+		vtc_log(hp->vl, 0, "stream must be called in an H/2 context\n");
 	cmd_stream(av, hp->h2, cmd, vl);
 }
 
