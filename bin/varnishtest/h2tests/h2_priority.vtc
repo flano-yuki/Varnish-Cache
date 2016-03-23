@@ -1,6 +1,6 @@
 varnishtest "priority"
 
-h2server s1 {        
+server s1 {        
 	stream 1 {
 		rxreq
 		txresp
@@ -20,7 +20,7 @@ h2server s1 {
 		expect stream.dependency == 7
 	} -run
 } -start
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
 	stream 1 {
 		txreq -req GET -url /1 -hdr :scheme http -hdr :authority localhost
 		rxresp
@@ -47,4 +47,4 @@ h2client c1 -connect ${s1_sock} {
 		expect stream.dependency == <undef>
 	} -run
 } -run
-h2server s1 -wait
+server s1 -wait

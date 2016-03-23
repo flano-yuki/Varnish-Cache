@@ -1,4 +1,4 @@
-h2server s1 {
+server s1 {
 	stream 2 {
 		rxreq
 		txresp -nohdrend
@@ -10,7 +10,7 @@ h2server s1 {
 
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
 	stream 0 {
 		expect stream.window == 65535
 	} -run
@@ -36,4 +36,4 @@ h2client c1 -connect ${s1_sock} {
 	} -run
 } -run
 
-h2server s1 -wait
+server s1 -wait

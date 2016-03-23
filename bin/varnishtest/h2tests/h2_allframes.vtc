@@ -1,4 +1,5 @@
-h2server s1 -nosettings {
+server s1 {
+	rxpri
 	stream 0 {
 # PRIO
 		txprio -stream 23456 -weight 123
@@ -30,7 +31,8 @@ h2server s1 -nosettings {
 	} -run
 } -start
 
-h2client c1 -nosettings -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
+	txpri
 	stream 0 {
 # PRIO
 		rxprio

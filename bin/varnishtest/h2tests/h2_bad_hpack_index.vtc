@@ -1,4 +1,4 @@
-h2server s1 {
+server s1 {
 	non-fatal
 	stream 1 {
 		rxreq
@@ -7,7 +7,7 @@ h2server s1 {
 	} -run
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
 	stream 1 {
 		txreq -idxHdr 100 -litHdr inc plain "foo" plain "bar"
 		rxgoaway

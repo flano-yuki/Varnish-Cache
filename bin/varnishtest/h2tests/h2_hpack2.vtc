@@ -1,4 +1,4 @@
-h2server s1 {
+server s1 {
 	stream 0 {
 		txsettings -hdrtbl 256
 		rxsettings
@@ -48,7 +48,7 @@ h2server s1 {
 	} -run
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
 	stream 0 {
 		txsettings -hdrtbl 256
 		rxsettings
@@ -113,4 +113,4 @@ h2client c1 -connect ${s1_sock} {
 
 } -run
 
-h2server s1 -wait
+server s1 -wait

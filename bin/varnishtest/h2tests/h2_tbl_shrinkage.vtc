@@ -1,6 +1,6 @@
 varnishtest "Reduce dynamic table size"
 
-h2server s1 {
+server s1 {
         stream 1 {
                 rxreq
                 txresp  -litHdr inc plain hoge plain fuga
@@ -21,7 +21,7 @@ h2server s1 {
         } -run
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
         stream 1 {
                 txreq -idxHdr 2 \
                         -idxHdr 6 \
@@ -49,4 +49,4 @@ h2client c1 -connect ${s1_sock} {
         } -run
 } -run
 
-h2server s1 -wait
+server s1 -wait
