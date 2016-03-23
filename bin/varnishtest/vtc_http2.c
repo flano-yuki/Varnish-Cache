@@ -1164,8 +1164,8 @@ cmd_tx11obj(CMD_ARGS)
  *
  * In H/2, content is transported using DATA(rfc7540#6.1), removing the need for
  * chunked encoding for example.
- */
-/* SECTION: h2.streams.data.txdata txdata
+ *
+ * SECTION: h2.streams.data.txdata txdata
  *
  * By default, data frames are empty, but you can, specify the argument
  * ``-data STRING`` to fill it with arbitrary content.
@@ -1207,10 +1207,12 @@ cmd_txdata(CMD_ARGS)
 	free(body);
 }
 
-/* SECTION: h2.both.streams.txrst txrst
+/* SECTION: h2.streams.reset RST_STREAM
  *
  * The RST_STREAM frame (rfc7540#6.4) terminates a stream, and embed an error
  * code to inform the other end of the reason for the termination.
+ *
+ * SECTION: h2.streams.reset.txrst txrst
  *
  * The only possible argument is ``err`` and sets the error code. It can be an
  * integer or a string describing the error, such as NO_ERROR, or CANCEL (see
@@ -1746,6 +1748,10 @@ cmd_rxreqsp(CMD_ARGS)
 	}
 
 RXFUNC(prio,	PRIORITY)
+/* SECTION: h2.streams.reset.rxrst rxrst
+ *
+ * Receive a RST_STREAM frame
+ */
 RXFUNC(rst,	RST)
 RXFUNC(settings,SETTINGS)
 RXFUNC(ping,	PING)
