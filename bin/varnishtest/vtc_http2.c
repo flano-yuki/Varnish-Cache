@@ -42,6 +42,7 @@
 #include <netinet/in.h>
 
 #include "vtc.h"
+#include "vtc_http.h"
 
 #include "vct.h"
 #include "vgz.h"
@@ -162,7 +163,7 @@ struct stream {
 	struct frame		*frame;
 	pthread_t		tp;
 	unsigned		reading;
-	struct http2		*hp;
+	struct http		*hp;
 	uint64_t		ws;
 
 	VTAILQ_HEAD(, frame)   fq;
@@ -174,27 +175,6 @@ struct stream {
 
 	int			dependency;
 	int			weight;
-};
-
-struct http2 {
-	unsigned		magic;
-#define HTTP2_MAGIC		0x0b71d23a
-	int			fd;
-	int			*sfd;
-	int			timeout;
-	struct vtclog		*vl;
-
-	int			fatal;
-	int			wf;
-
-	pthread_t		tp;
-	unsigned		running;
-	VTAILQ_HEAD(, stream)   streams;
-	pthread_mutex_t		mtx;
-	pthread_cond_t          cond;
-	struct hpk_ctx		*outctx;
-	struct hpk_ctx		*inctx;
-	uint64_t		ws;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -212,11 +192,11 @@ struct http2 {
 	} while (0)
 
 static void
-http_write(const struct http2 *hp, int lvl, char *buf, int s, const char *pfx)
+http_write(const struct http *hp, int lvl, char *buf, int s, const char *pfx)
 {
 	ssize_t l;
 
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 	AN(buf);
 	AN(pfx);
 
@@ -228,11 +208,11 @@ http_write(const struct http2 *hp, int lvl, char *buf, int s, const char *pfx)
 }
 
 static int
-get_bytes(struct http2 *hp, char *buf, int n) {
+get_bytes(struct http *hp, char *buf, int n) {
 	int i;
 	struct pollfd pfd[1];
 
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 	AN(buf);
 
 	while (n > 0) {
@@ -370,13 +350,13 @@ clean_frame(struct frame **f)
 }
 
 static void
-write_frame(struct http2 *hp, struct frame *f)
+write_frame(struct http *hp, struct frame *f)
 {
 	ssize_t l;
 	const char *type;
 	char hdr[9];
 
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
 
 	writeFrameHeader(hdr, f);
@@ -410,7 +390,7 @@ static void
 exclusive_stream_dependency(struct stream *s)
 {
 	struct stream *target = NULL;
-	struct http2 *hp = s->hp;
+	struct http *hp = s->hp;
 	
 	if (s->id == 0)
 		return;
@@ -425,16 +405,16 @@ exclusive_stream_dependency(struct stream *s)
  */
 static void *
 receive_frame(void *priv) {
-	struct http2 *hp;
+	struct http *hp;
 	char hdr[9];
 	struct frame *f;
 	struct stream *s;
 	const char *type;
 
-	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 
 	AZ(pthread_mutex_lock(&hp->mtx));
-	while (hp->running) {
+	while (hp->h2) {
 		/*no wanted frames? */
 		if (hp->wf == 0) {
 			AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
@@ -473,7 +453,7 @@ receive_frame(void *priv) {
 			}
 			if (!s)
 				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
-			if (!hp->running) {
+			if (!hp->h2) {
 				clean_frame(&f);
 				return (NULL);
 			}
@@ -721,7 +701,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	struct frame *f = s->frame;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
-	CHECK_OBJ_NOTNULL(s->hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(s->hp, HTTP_MAGIC);
 	AN(spec);
 	AN(buf);
 
@@ -888,7 +868,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 static void
 cmd_txframe(CMD_ARGS)
 {
-	struct http2 *hp;
+	struct http *hp;
 	struct stream *s;
 	char *q;
 	char *buf;
@@ -898,7 +878,7 @@ cmd_txframe(CMD_ARGS)
 	(void)cmd;
 
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);
 	AN(av[1]);
 	AZ(av[2]);
 
@@ -1347,7 +1327,7 @@ static void
 cmd_txsettings(CMD_ARGS)
 {
 	struct stream *s;
-	struct http2 *hp;
+	struct http *hp;
 	char *p;
 	uint32_t val = 0;
 	struct frame f;
@@ -1357,7 +1337,7 @@ cmd_txsettings(CMD_ARGS)
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);
 
 	memset(buf, 0, 512);
 	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
@@ -1504,7 +1484,7 @@ cmd_txgoaway(CMD_ARGS)
 static void
 cmd_txwinup(CMD_ARGS)
 {
-	struct http2 *hp;
+	struct http *hp;
 	struct stream *s;
 	char *p;
 	struct frame f;
@@ -1513,7 +1493,7 @@ cmd_txwinup(CMD_ARGS)
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
-	CAST_OBJ_NOTNULL(hp, s->hp, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);
 	memset(buf, 0, 8);
 
 	AN(av[1]);
@@ -1755,7 +1735,7 @@ cmd_rxframe(CMD_ARGS) {
 static void
 cmd_http_expect(CMD_ARGS)
 {
-	struct http2 *hp;
+	struct http *hp;
 	struct stream *s;
 	const char *lhs, *clhs;
 	char *cmp;
@@ -1769,7 +1749,7 @@ cmd_http_expect(CMD_ARGS)
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 	hp = s->hp;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 
 	AZ(strcmp(av[0], "expect"));
 	av++;
@@ -1821,11 +1801,11 @@ cmd_http_expect(CMD_ARGS)
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
 }
 
-static void
-cmd_fatal(CMD_ARGS)
+void
+cmd_h2_fatal(CMD_ARGS)
 {
-	struct http2 *hp;
-	CAST_OBJ_NOTNULL(hp, priv, HTTP2_MAGIC);
+	struct http *hp;
+	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 
 	AZ(av[1]);
 	if (!strcmp(av[0], "fatal"))
@@ -1889,7 +1869,7 @@ stream_thread(void *priv)
  */
 
 static struct stream *
-stream_new(const char *name, struct http2 *h)
+stream_new(const char *name, struct http *h)
 {
 	char *p;
 	struct stream *s;
@@ -1910,7 +1890,7 @@ stream_new(const char *name, struct http2 *h)
 		vtc_log(h->vl, 0, "Stream id must be a 31-bits integer "
 				"(found %s)", name);
 
-	CHECK_OBJ_NOTNULL(h, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(h, HTTP_MAGIC);
 	s->hp = h;
 
 	//bprintf(s->connect, "%s", "${v1_sock}");
@@ -1987,7 +1967,7 @@ stream_run(struct stream *s)
  * Client command dispatch
  */
 
-/* SECTION: h2.both.streams Streams
+/* SECTION: 2.both.streams Streams
  *
  * Streams map roughly to a request in H/2, a request is sent on stream N,
  * the response too, then the stream is discarded. The main exception is the
@@ -2008,11 +1988,11 @@ void
 cmd_stream(CMD_ARGS)
 {
 	struct stream *s, *s2;
-	struct http2 *h;
+	struct http *h;
 
 	(void)cmd;
 	(void)vl;
-	CAST_OBJ_NOTNULL(h, priv, HTTP2_MAGIC);
+	CAST_OBJ_NOTNULL(h, priv, HTTP_MAGIC);
 
 	if (av == NULL) {
 		VTAILQ_FOREACH_SAFE(s, &h->streams, list, s2) {
@@ -2063,42 +2043,30 @@ cmd_stream(CMD_ARGS)
 
 static const struct cmds http2_cmds[] = {
 	{ "delay",		cmd_delay },
-	{ "fatal",		cmd_fatal },
-	{ "non-fatal",		cmd_fatal },
 	{ NULL,			NULL }
 };
 
-struct http2 *
-start_h2(int fd, int *sfd, struct vtclog *vl,
-		unsigned nosettings)
+void
+start_h2(struct http *hp)
 {
-	struct http2 *h2;
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
+	pthread_mutex_init(&hp->mtx, NULL);
+	pthread_cond_init(&hp->cond, NULL);
+	VTAILQ_INIT(&hp->streams);
+	hp->ws = 0xffff;
 
-	ALLOC_OBJ(h2, HTTP2_MAGIC);
-	AN(h2);
-	pthread_mutex_init(&h2->mtx, NULL);
-	pthread_cond_init(&h2->cond, NULL);
-	VTAILQ_INIT(&h2->streams);
-	h2->fd = fd;
-	h2->sfd = sfd;
-	h2->timeout = vtc_maxdur * 1000 / 2;
-	h2->vl = vl;
-	h2->ws = 0xffff;
+	hp->h2 = 1;
 
-	h2->running = 1;
-
-	h2->inctx = HPK_NewCtx(4096);
-	h2->outctx = HPK_NewCtx(4096);
-	AZ(pthread_create(&h2->tp, NULL, receive_frame, h2));
-
-	return (h2);
+	hp->inctx = HPK_NewCtx(4096);
+	hp->outctx = HPK_NewCtx(4096);
+	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
 }
 
 void
-stop_h2(struct http2 *hp)
+stop_h2(struct http *hp)
 {
 	struct stream *s;
-	CHECK_OBJ_NOTNULL(hp, HTTP2_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 	VTAILQ_FOREACH(s, &hp->streams, list) {
 		while (s->running)
 			stream_wait(s);
@@ -2106,7 +2074,7 @@ stop_h2(struct http2 *hp)
 
 	// kill the frame dispatcher 
 	AZ(pthread_mutex_lock(&hp->mtx));
-	hp->running = 0;
+	hp->h2 = 0;
 	AZ(pthread_cond_signal(&hp->cond));
 	AZ(pthread_mutex_unlock(&hp->mtx));
 	AZ(pthread_join(hp->tp, NULL));

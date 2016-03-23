@@ -40,45 +40,13 @@
 #include <string.h>
 
 #include "vtc.h"
+#include "vtc_http.h"
 
 #include "vct.h"
 #include "vgz.h"
 #include "vnum.h"
 #include "vre.h"
 #include "vtcp.h"
-
-#define MAX_HDR		50
-
-struct http {
-	unsigned		magic;
-#define HTTP_MAGIC		0x2f02169c
-	int			fd;
-	int			*sfd;
-	int			timeout;
-	struct vtclog		*vl;
-
-	struct vsb		*vsb;
-
-	int			nrxbuf;
-	char			*rxbuf;
-	char			*rem_ip;
-	char			*rem_port;
-	int			prxbuf;
-	char			*body;
-	unsigned		bodyl;
-	char			bodylen[20];
-	char			chunklen[20];
-
-	char			*req[MAX_HDR];
-	char			*resp[MAX_HDR];
-
-	int			gziplevel;
-	int			gzipresidual;
-
-	int			fatal;
-
-	struct http2		*h2;
-};
 
 #define ONLY_CLIENT(hp, av)						\
 	do {								\
@@ -1353,7 +1321,7 @@ cmd_http_txpri(CMD_ARGS)
 	if (l != sizeof(PREFACE) - 1)
 		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
 		    l, sizeof(PREFACE) - 1, strerror(errno));
-	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
+	start_h2(hp);
 	AN(hp->h2);
 }
 
@@ -1371,10 +1339,10 @@ cmd_http_rxpri(CMD_ARGS)
 
 	hp->prxbuf = 0;
 	if (!http_rxchar(hp, sizeof(PREFACE) - 1, 0))
-		vtc_log(hp->vl, 0, "Couldn't retrieve connection preface\n");
+		vtc_log(hp->vl, 0, "Couldn't retrieve connection preface");
 	if (strncmp(hp->rxbuf, PREFACE, sizeof(PREFACE) - 1))
 		vtc_log(hp->vl, 0, "Received invalid preface\n");
-	hp->h2 = start_h2(hp->fd, hp->sfd, hp->vl, 0);
+	start_h2(hp);
 	AN(hp->h2);
 }
 
@@ -1384,7 +1352,7 @@ cmd_http_stream(CMD_ARGS)
 	struct http *hp = (struct http *)priv;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 	if (!hp->h2) {
-		vtc_log(hp->vl, 4, "Not in H/2 mode node, do what's needed\n");
+		vtc_log(hp->vl, 4, "Not in H/2 mode node, do what's needed");
 		if (hp->sfd)
 			parse_string("rxpri", http_cmds, hp, vl);
 		else
@@ -1397,7 +1365,7 @@ cmd_http_stream(CMD_ARGS)
 				"expect settings.ack == true"
 			     "} -run\n", http_cmds, hp, vl);
 	}
-	cmd_stream(av, hp->h2, cmd, vl);
+	cmd_stream(av, hp, cmd, vl);
 }
 
 /**********************************************************************
