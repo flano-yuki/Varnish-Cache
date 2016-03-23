@@ -164,7 +164,7 @@ struct stream {
 	pthread_t		tp;
 	unsigned		reading;
 	struct http		*hp;
-	uint64_t		ws;
+	int64_t			ws;
 
 	VTAILQ_HEAD(, frame)   fq;
 
@@ -350,7 +350,7 @@ clean_frame(struct frame **f)
 }
 
 static void
-write_frame(struct http *hp, struct frame *f)
+write_frame(struct http *hp, struct frame *f, unsigned lock)
 {
 	ssize_t l;
 	const char *type;
@@ -369,7 +369,8 @@ write_frame(struct http *hp, struct frame *f)
 			"flags: 0x%02x, size: %d",
 			f->stid, type, f->type, f->flags, f->size);
 
-	AZ(pthread_mutex_lock(&hp->mtx));
+	if (lock)
+		AZ(pthread_mutex_lock(&hp->mtx));
 	l = write(hp->fd, hdr, sizeof(hdr));
 	if (l != sizeof(hdr))
 		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
@@ -383,7 +384,8 @@ write_frame(struct http *hp, struct frame *f)
 					"Write failed: (%zd vs %d) %s",
 					l, f->size, strerror(errno));
 	}
-	AZ(pthread_mutex_unlock(&hp->mtx));
+	if (lock)
+		AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
 static void
@@ -405,13 +407,13 @@ exclusive_stream_dependency(struct stream *s)
  */
 static void *
 receive_frame(void *priv) {
-	struct http *hp;
+	struct http *hp = (struct http *)priv;
 	char hdr[9];
 	struct frame *f;
 	struct stream *s;
 	const char *type;
 
-	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
+	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 
 	AZ(pthread_mutex_lock(&hp->mtx));
 	while (hp->h2) {
@@ -1146,7 +1148,7 @@ cmd_tx11obj(CMD_ARGS)
 	}
 	f.data = buf;	
 	HPK_FreeIter(iter);
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 
 	if (!body)
 		return;
@@ -1154,7 +1156,7 @@ cmd_tx11obj(CMD_ARGS)
 	INIT_FRAME(f, DATA, strlen(body), s->id, END_STREAM);
 	f.data = body;
 
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 	free(body);
 }
 
@@ -1187,7 +1189,7 @@ cmd_txdata(CMD_ARGS)
 
 	f.size = strlen(body);
 	f.data = body;
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 	free(body);
 }
 /* SECTION: h2.both.streams.txrst txrst
@@ -1233,7 +1235,7 @@ cmd_txrst(CMD_ARGS)
 
 	err = htonl(err);
 	f.data = (void *)&err;
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 }
 
 /* SECTION: h2.both.streams.txprio txprio
@@ -1293,7 +1295,7 @@ cmd_txprio(CMD_ARGS)
 
 	*ubuf = htonl(stid | exclusive);
 	buf[4] = s->weight;
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 }
 
 #define PUT_KV(vl, name, val, code) \
@@ -1326,7 +1328,7 @@ cmd_txprio(CMD_ARGS)
 static void
 cmd_txsettings(CMD_ARGS)
 {
-	struct stream *s;
+	struct stream *s, *_s;
 	struct http *hp;
 	char *p;
 	uint32_t val = 0;
@@ -1343,6 +1345,7 @@ cmd_txsettings(CMD_ARGS)
 	INIT_FRAME(f, SETTINGS, 0, s->id, 0);
 	f.data = buf;
 
+	AZ(pthread_mutex_lock(&hp->mtx));
 	while (*++av) {
 		if (!strcmp(*av, "-push")) {
 			++av;
@@ -1368,6 +1371,9 @@ cmd_txsettings(CMD_ARGS)
 		}
 		else if (!strcmp(*av, "-winsize"))	{
 			PUT_KV(vl, winsize, val, 0x4);
+			VTAILQ_FOREACH(_s, &hp->streams, list)
+				_s->ws += (val - hp->iws);
+			hp->iws = val;
 		}
 		else if (!strcmp(*av, "-framesize"))	{
 			PUT_KV(vl, framesize, val, 0x5);
@@ -1383,7 +1389,8 @@ cmd_txsettings(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown txsettings spec: %s\n", *av);
 
-	write_frame(hp, &f);
+	write_frame(hp, &f, 0);
+	AZ(pthread_mutex_unlock(&hp->mtx));
 }
 
 /*
@@ -1422,7 +1429,7 @@ cmd_txping(CMD_ARGS)
 		vtc_log(vl, 0, "Unknown txping spec: %s\n", *av);
 	if (!f.data)
 		f.data = buf;
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 }
 
 static void
@@ -1477,7 +1484,7 @@ cmd_txgoaway(CMD_ARGS)
 		f.data = malloc(2);
 	((uint32_t*)f.data)[0] = htonl(ls);
 	((uint32_t*)f.data)[1] = htonl(err);
-	write_frame(s->hp, &f);
+	write_frame(s->hp, &f, 1);
 	free(f.data);
 }
 
@@ -1520,7 +1527,7 @@ cmd_txwinup(CMD_ARGS)
 
 	size = htonl(size);
 	f.data = (void *)&size;
-	write_frame(hp, &f);
+	write_frame(hp, &f, 1);
 }
 
 static struct frame *
@@ -1880,7 +1887,7 @@ stream_new(const char *name, struct http *h)
 	pthread_cond_init(&s->cond, NULL);
 	REPLACE(s->name, name);
 	VTAILQ_INIT(&s->fq);
-	s->ws = 0xffff;
+	s->ws = h->iws;
 
 	s->weight = 16;
 	s->dependency = 0;
@@ -2053,6 +2060,7 @@ start_h2(struct http *hp)
 	pthread_mutex_init(&hp->mtx, NULL);
 	pthread_cond_init(&hp->cond, NULL);
 	VTAILQ_INIT(&hp->streams);
+	hp->iws = 0xffff;
 	hp->ws = 0xffff;
 
 	hp->h2 = 1;
