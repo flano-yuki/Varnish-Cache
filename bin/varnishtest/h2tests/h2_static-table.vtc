@@ -1,4 +1,7 @@
-h2server s1 {
+varnishtest "Static table encoding"
+server s1 {
+	rxpri
+
 	stream 1 {
 		rxreq
 		expect req.http.:path == "/index.html"
@@ -7,7 +10,9 @@ h2server s1 {
 
 } -start
 
-h2client c1 -connect ${s1_sock} {
+client c1 -connect ${s1_sock} {
+	txpri
+
 	stream 1 {
 
 		txreq -idxHdr 2 \
@@ -19,4 +24,4 @@ h2client c1 -connect ${s1_sock} {
 
 } -run
 
-h2server s1 -wait
+server s1 -wait
