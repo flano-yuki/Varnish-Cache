@@ -50,6 +50,10 @@
 
 #define ONLY_CLIENT(hp, av)						\
 	do {								\
+		if (hp->h2)						\
+			vtc_log(hp->vl, 0,				\
+			    "\"%s\" only possible before H/2 upgrade",	\
+					av[0]);				\
 		if (hp->sfd != NULL)					\
 			vtc_log(hp->vl, 0,				\
 			    "\"%s\" only possible in client", av[0]);	\
@@ -57,6 +61,10 @@
 
 #define ONLY_SERVER(hp, av)						\
 	do {								\
+		if (hp->h2)						\
+			vtc_log(hp->vl, 0,				\
+			    "\"%s\" only possible before H/2 upgrade",	\
+					av[0]);				\
 		if (hp->sfd == NULL)					\
 			vtc_log(hp->vl, 0,				\
 			    "\"%s\" only possible in server", av[0]);	\
