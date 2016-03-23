@@ -1963,11 +1963,7 @@ stream_run(struct stream *s)
 
 
 
-/**********************************************************************
- * Client command dispatch
- */
-
-/* SECTION: 2.both.streams Streams
+/* SECTION: h2.both.streams Streams
  *
  * Streams map roughly to a request in H/2, a request is sent on stream N,
  * the response too, then the stream is discarded. The main exception is the
@@ -1982,6 +1978,10 @@ stream_run(struct stream *s)
  *
  * ACTION can be -start, -wait or -run, with the same meanings as for
  * client/server
+ *
+ * Note that if the parent isn't yet operating in H/2 mode, the stream command
+ * will trigger the the preface+settings sequence, effectively upgrading the
+ * connection to H/2.
  */
 
 void
