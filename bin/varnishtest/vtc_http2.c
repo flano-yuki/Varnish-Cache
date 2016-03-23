@@ -51,16 +51,10 @@
 #include "vtcp.h"
 #include "hpack.h"
 
-/* SECTION: h2.both H/2 clients and servers
+/*
  *
- * Clients and servers are very similar in semantics under H/2 (mainly because
- * they just encapsulate H/1 that isn't that symetrical). For this reason, both
- * entities are described here under the same section.
- *
- * Both are described and handled in a similar manner:
- *
- * * h2client cNAME [SPEC] [ACTION]
- * * h2server sNAME [SPEC] [ACTION]
+ * * client cNAME [SPEC] [ACTION]
+ * * server sNAME [SPEC] [ACTION]
  *
  * Names cNAME (sname) must start by "c" ("s").
  *
@@ -1255,10 +1249,12 @@ cmd_txrst(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 }
 
-/* SECTION: h2.both.streams.txprio txprio
+/* SECTION: h2.streams.prio PRIORITY
  * 
  * The PRIORITY (rfc7540#6.3) allows the client to define a priority between
  * streams that the server is free to follow or not.
+ *
+ * SECTION: h2.streams.prio.txprio txprio
  *
  * Possible arguments are:
  *
@@ -1326,10 +1322,12 @@ cmd_txprio(CMD_ARGS)
 		f.size += 6; \
 	} while(0)
 
-/* SECTION: h2.both.streams.txsettings txsettings
+/* SECTION: h2.streams.settings SETTINGS
  * 
  * SETTINGS frames (rfc7540#6.5) are used to announce the conditions of the
  * transactions to the peer.
+ *
+ * SECTION: h2.streams.settings.txsettings txsettings
  *
  * SETTINGS frames must be acknowledge, arguments are as follow (most of them
  * are from  rfc7540#6.5.2):
@@ -1417,6 +1415,22 @@ cmd_txpush(CMD_ARGS)
 static void
 cmd_rxpush(CMD_ARGS)
 */
+
+/* SECTION: h2.streams.ping PING
+ *
+ * PING frame are frames with a small payload used to test the quality of the
+ * link between the two peers. PING frames should be acknowledged as soon as
+ * possible, meaning sending a PING frame with the same payload, with the ACK
+ * flag set.
+ *
+ * SECTION: h2.streams.ping.txping txping
+ *
+ * ``txping`` only has two arguments:
+ *
+ * * -data STRING: specify the payload of the frame, with STRING being an 8-char
+ *   string
+ * * -ack: set the ACK flag
+ */
 static void
 cmd_txping(CMD_ARGS)
 {
@@ -1449,6 +1463,23 @@ cmd_txping(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 }
 
+/* SECTION: h2.streams.goaway GOAWAY
+ *
+ * This type of frame inform the peer that the connection, as a whole is
+ * finished, and they can specify the reason for that termination.
+ *
+ * SECTION: h2.streams.goaway.txgoaway rxgoaway
+ *
+ * Possible options include:
+ *
+ * * -err STRING|INT: set the error code to eplain the termination. The second
+ *   argument can be a integer or the string version of the error code as found
+ *   in rfc7540#7
+ * * -laststream INT: the id of the "highest-numbered stream identifier for
+ *   which the sender of the GOAWAY frame might have taken some action on or
+ *   might yet take action on"
+ * * -debug: specify the debug data, if any to append to the frame.
+ */
 static void
 cmd_txgoaway(CMD_ARGS)
 {
@@ -1505,6 +1536,12 @@ cmd_txgoaway(CMD_ARGS)
 	free(f.data);
 }
 
+/* SECTION: h2.streams.winup WINDOW_UPDATE
+ * SECTION: h2.streams.winup.txwinup txwinup
+ *
+ * There's only one argument to ``txwinup``: ``-size INT``, to give INT credits
+ * to the peer.
+ */
 static void
 cmd_txwinup(CMD_ARGS)
 {
@@ -1747,15 +1784,40 @@ cmd_rxreqsp(CMD_ARGS)
 					s->frame->type, "rx ## lctype"); \
 	}
 
+/* SECTION: h2.streams.prio.rxprio rxprio
+ *
+ * Receive a PRIORITY frame
+ */
 RXFUNC(prio,	PRIORITY)
+
 /* SECTION: h2.streams.reset.rxrst rxrst
  *
  * Receive a RST_STREAM frame
  */
 RXFUNC(rst,	RST)
+
+/* SECTION: h2.streams.settings.rxsettings rxsettings
+ *
+ * Receive a SETTINGS frame
+ */
 RXFUNC(settings,SETTINGS)
+
+/* SECTION: h2.streams.ping.rxping rxping
+ *
+ * Receive a PING frame
+ */
 RXFUNC(ping,	PING)
+
+/* SECTION: h2.streams.goaway.rxgoaway rxgoaway
+ *
+ * Receive a GOAWAY frame
+ */
 RXFUNC(goaway,	GOAWAY)
+
+/* SECTION: h2.streams.winup.rxwinup rxwinup
+ *
+ * Receive a WINDOW_UPDATE frame
+ */
 RXFUNC(winup,	WINUP)
 
 static void
@@ -2001,7 +2063,7 @@ stream_run(struct stream *s)
 
 
 
-/* SECTION: h2.both.streams Streams
+/* SECTION: h2.streams Streams
  *
  * Streams map roughly to a request in H/2, a request is sent on stream N,
  * the response too, then the stream is discarded. The main exception is the
