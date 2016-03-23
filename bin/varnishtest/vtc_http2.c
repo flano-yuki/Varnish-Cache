@@ -1154,19 +1154,19 @@ cmd_tx11obj(CMD_ARGS)
 	free(body);
 }
 
-/* SECTION: h2.streams.data Data
- *
- * In H/2, content is transported using DATA(rfc7540#6.1), removing the need for
- * chunked encoding for example.
- *
+/*
  * SECTION: h2.streams.data.txdata txdata
  *
- * By default, data frames are empty, but you can, specify the argument
- * ``-data STRING`` to fill it with arbitrary content.
+ * By default, data frames are empty. The receiving end will know the whole body
+ * has been delivered thanks to the END_STREAM flag set in the last DATA frame,
+ * and txdata automatically set it.
  *
- * The receiving end will know the whole body has been delivered thanks to the
- * END_STREAM flag set in the last DATA frame. txdata automatically set it, and
- * you can disable it using ``
+ * \-data STRING
+ *         Data to be embedded into the frame
+ *
+ * \-nostrend
+ *         Don't set the END_STREAM flag, allowing to send more data on this
+ *         stream
  */
 static void
 cmd_txdata(CMD_ARGS)
@@ -1201,18 +1201,15 @@ cmd_txdata(CMD_ARGS)
 	free(body);
 }
 
-/* SECTION: h2.streams.reset RST_STREAM
+/* SECTION: h2.streams.reset.txrst txrst
  *
- * The RST_STREAM frame (rfc7540#6.4) terminates a stream, and embed an error
- * code to inform the other end of the reason for the termination.
+ * Send a RST_STREAM frame. By default, txrst will send a 0 error code
+ * (NO_ERROR).
  *
- * SECTION: h2.streams.reset.txrst txrst
- *
- * The only possible argument is ``err`` and sets the error code. It can be an
- * integer or a string describing the error, such as NO_ERROR, or CANCEL (see
- * rfc7540#11.4 for more strings).
- *
- * By default, txrst will send a 0 error code (NO_ERROR).
+ * \-err STRING|INT
+ *         Sets the error code to be sent. The argument can be an integer or a
+ *         string describing the error, such as NO_ERROR, or CANCEL (see
+ *         rfc7540#11.4 for more strings).
  */
 static void
 cmd_txrst(CMD_ARGS)
@@ -1249,20 +1246,20 @@ cmd_txrst(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 }
 
-/* SECTION: h2.streams.prio PRIORITY
- * 
- * The PRIORITY (rfc7540#6.3) allows the client to define a priority between
- * streams that the server is free to follow or not.
+/* SECTION: h2.streams.prio.txprio txprio
  *
- * SECTION: h2.streams.prio.txprio txprio
+ * Send a PRIORITY frame
  *
- * Possible arguments are:
+ * \-stream INT
+ *         indicate the id of the stream the sender stream depends on.
  *
- * * -stream INT: indicate the id of the stream the sender stream depends on
- * * -ex: the dependency should be made exclusive (only this streams depends on
- *   the parent stream)
- * * -weight INT: an 8-bits integer is used to balance priority between streams
- *   depending on the same streams. 
+ * \-ex
+ *         the dependency should be made exclusive (only this streams depends on
+ *         the parent stream).
+ *
+ * \-weight INT
+ *         an 8-bits integer is used to balance priority between streams
+ *         depending on the same streams. 
  */
 static void
 cmd_txprio(CMD_ARGS)
@@ -1322,23 +1319,31 @@ cmd_txprio(CMD_ARGS)
 		f.size += 6; \
 	} while(0)
 
-/* SECTION: h2.streams.settings SETTINGS
- * 
- * SETTINGS frames (rfc7540#6.5) are used to announce the conditions of the
- * transactions to the peer.
- *
- * SECTION: h2.streams.settings.txsettings txsettings
+/* SECTION: h2.streams.settings.txsettings txsettings
  *
  * SETTINGS frames must be acknowledge, arguments are as follow (most of them
  * are from  rfc7540#6.5.2):
  *
- * * -hdrtbl INT: headers table size
- * * -push BOOL: whether push frames are accepted or not
- * * -maxstreams INT: maximum concurrent streams allowed
- * * -winsize INT: sender's initial window size
- * * -framesize INT: largest frame size authorized
- * * -hdrsize INT: maximum size of the header list authorized
- * * -ack: set the ack bit
+ * \-hdrtbl INT
+ *         headers table size
+ *
+ * \-push BOOL
+ *         whether push frames are accepted or not
+ *
+ * \-maxstreams INT
+ *         maximum concurrent streams allowed
+ *
+ * \-winsize INT
+ *         sender's initial window size
+ *
+ * \-framesize INT
+ *         largest frame size authorized
+ *
+ * \-hdrsize INT
+ *         maximum size of the header list authorized
+ *
+ * \-ack
+ *         set the ack bit
  */
 static void
 cmd_txsettings(CMD_ARGS)
@@ -1416,20 +1421,15 @@ static void
 cmd_rxpush(CMD_ARGS)
 */
 
-/* SECTION: h2.streams.ping PING
+/* SECTION: h2.streams.ping.txping txping
  *
- * PING frame are frames with a small payload used to test the quality of the
- * link between the two peers. PING frames should be acknowledged as soon as
- * possible, meaning sending a PING frame with the same payload, with the ACK
- * flag set.
+ * Send PING frame.
  *
- * SECTION: h2.streams.ping.txping txping
+ * \-data STRING
+ *         specify the payload of the frame, with STRING being an 8-char string.
  *
- * ``txping`` only has two arguments:
- *
- * * -data STRING: specify the payload of the frame, with STRING being an 8-char
- *   string
- * * -ack: set the ACK flag
+ * \-ack
+ *         set the ACK flag.
  */
 static void
 cmd_txping(CMD_ARGS)
@@ -1463,22 +1463,23 @@ cmd_txping(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 }
 
-/* SECTION: h2.streams.goaway GOAWAY
- *
- * This type of frame inform the peer that the connection, as a whole is
- * finished, and they can specify the reason for that termination.
- *
+/*
  * SECTION: h2.streams.goaway.txgoaway rxgoaway
  *
  * Possible options include:
  *
- * * -err STRING|INT: set the error code to eplain the termination. The second
- *   argument can be a integer or the string version of the error code as found
- *   in rfc7540#7
- * * -laststream INT: the id of the "highest-numbered stream identifier for
- *   which the sender of the GOAWAY frame might have taken some action on or
- *   might yet take action on"
- * * -debug: specify the debug data, if any to append to the frame.
+ * \-err STRING|INT
+ *         set the error code to eplain the termination. The second argument
+ *         can be a integer or the string version of the error code as found
+ *         in rfc7540#7.
+ *
+ * \-laststream INT
+ *         the id of the "highest-numbered stream identifier for which the
+ *         sender of the GOAWAY frame might have taken some action on or might
+ *         yet take action on".
+ *
+ * \-debug
+ *         specify the debug data, if any to append to the frame.
  */
 static void
 cmd_txgoaway(CMD_ARGS)
@@ -1536,11 +1537,13 @@ cmd_txgoaway(CMD_ARGS)
 	free(f.data);
 }
 
-/* SECTION: h2.streams.winup WINDOW_UPDATE
- * SECTION: h2.streams.winup.txwinup txwinup
+/* SECTION: h2.streams.winup.txwinup txwinup
  *
- * There's only one argument to ``txwinup``: ``-size INT``, to give INT credits
- * to the peer.
+ * Transmit a WINDOW_UPDATE frame, increasing the amount of credit of the
+ * connection (from stream 0) or of the stream (any other stream).
+ *
+ * \-size INT
+ *         give INT credits to the peer.
  */
 static void
 cmd_txwinup(CMD_ARGS)
@@ -1694,8 +1697,11 @@ cmd_rxcont(CMD_ARGS)
  * DATA frame, if you wish to receive more, you can use these two convenience
  * arguments:
  *
- * * -all: keep waiting for DATA frame until one sets the END_STREAM flag
- * * -some INT: retrieve INT DATA frames.
+ * \-all
+ *         keep waiting for DATA frame until one sets the END_STREAM flag
+ *
+ * \-some INT
+ *         retrieve INT DATA frames.
  *
  */
 static void
