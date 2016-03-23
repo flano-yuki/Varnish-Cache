@@ -1398,9 +1398,6 @@ cmd_http_rxpri(CMD_ARGS)
 	//}
 }
 
-/* SECTION: h1.both.stream stream
- *
- */
 static void
 cmd_http_stream(CMD_ARGS)
 {
