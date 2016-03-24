@@ -635,7 +635,7 @@ receive_frame(void *priv) {
 	}
 
 #define RETURN_SETTINGS(idx) \
-{ \
+do { \
 	if (isnan(f->md.settings[idx])) { \
 		return (NULL); \
 	} \
@@ -644,7 +644,7 @@ receive_frame(void *priv) {
 } while (0);
 
 #define RETURN_BUFFED(val) \
-{ \
+do { \
 	snprintf(buf, 20, "%d", val); \
 	return (buf); \
 } while (0)
