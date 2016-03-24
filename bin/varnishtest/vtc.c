@@ -491,10 +491,14 @@ cmd_err_shell(CMD_ARGS)
 	VSB_delete(vsb);
 }
 
-/**********************************************************************
- * Dump command arguments
+/* SECTION: h1.both.spec.delay delay
+ *
+ * Take a float as argument and sleep for that number of seconds.
  */
-
+/* SECTION: h2.streams.spec.delay delay
+ *
+ * Take a float as argument and sleep for that number of seconds.
+ */
 void
 cmd_delay(CMD_ARGS)
 {

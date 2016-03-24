@@ -51,28 +51,6 @@
 #include "vtcp.h"
 #include "hpack.h"
 
-/*
- *
- * * client cNAME [SPEC] [ACTION]
- * * server sNAME [SPEC] [ACTION]
- *
- * Names cNAME (sname) must start by "c" ("s").
- *
- * SPEC is a string describing the actions undertaken by the entity, and is
- * mostly composed of streams declaration and management. The string can be
- * quoted "like this" for single line statements, or enclosed in curly brackets
- * for multi-line confort.
- *
- * ACTION can be:
- *
- * * -start: start a thread of the entity and continue parsing the specification
- *   immediately
- * * -wait: block until the thread returns
- * * -run: equivalent to calling -run then -wait
- * * -break: stop the running entity
- *
- */
-
 #define MAX_HDR		50
 
 #define ERR_MAX 13
@@ -1155,7 +1133,7 @@ cmd_tx11obj(CMD_ARGS)
 }
 
 /*
- * SECTION: h2.streams.data.txdata txdata
+ * SECTION: h2.streams.spec.data_txdata txdata
  *
  * By default, data frames are empty. The receiving end will know the whole body
  * has been delivered thanks to the END_STREAM flag set in the last DATA frame,
@@ -1201,7 +1179,7 @@ cmd_txdata(CMD_ARGS)
 	free(body);
 }
 
-/* SECTION: h2.streams.reset.txrst txrst
+/* SECTION: h2.streams.spec.reset_txrst txrst
  *
  * Send a RST_STREAM frame. By default, txrst will send a 0 error code
  * (NO_ERROR).
@@ -1246,7 +1224,7 @@ cmd_txrst(CMD_ARGS)
 	write_frame(s->hp, &f, 1);
 }
 
-/* SECTION: h2.streams.prio.txprio txprio
+/* SECTION: h2.streams.spec.prio_txprio txprio
  *
  * Send a PRIORITY frame
  *
@@ -1319,7 +1297,7 @@ cmd_txprio(CMD_ARGS)
 		f.size += 6; \
 	} while(0)
 
-/* SECTION: h2.streams.settings.txsettings txsettings
+/* SECTION: h2.streams.spec.settings_txsettings txsettings
  *
  * SETTINGS frames must be acknowledge, arguments are as follow (most of them
  * are from  rfc7540#6.5.2):
@@ -1421,7 +1399,7 @@ static void
 cmd_rxpush(CMD_ARGS)
 */
 
-/* SECTION: h2.streams.ping.txping txping
+/* SECTION: h2.streams.spec.ping_txping txping
  *
  * Send PING frame.
  *
@@ -1464,7 +1442,7 @@ cmd_txping(CMD_ARGS)
 }
 
 /*
- * SECTION: h2.streams.goaway.txgoaway rxgoaway
+ * SECTION: h2.streams.spec.goaway_txgoaway rxgoaway
  *
  * Possible options include:
  *
@@ -1537,7 +1515,7 @@ cmd_txgoaway(CMD_ARGS)
 	free(f.data);
 }
 
-/* SECTION: h2.streams.winup.txwinup txwinup
+/* SECTION: h2.streams.spec.winup_txwinup txwinup
  *
  * Transmit a WINDOW_UPDATE frame, increasing the amount of credit of the
  * connection (from stream 0) or of the stream (any other stream).
@@ -1691,7 +1669,7 @@ cmd_rxcont(CMD_ARGS)
 }
 
 
-/* SECTION: h2.streams.data.rxdata rxdata
+/* SECTION: h2.streams.spec.data_rxdata rxdata
  *
  * Receiving data is done using the ``rxdata`` keywords and will retrieve one
  * DATA frame, if you wish to receive more, you can use these two convenience
@@ -1790,37 +1768,37 @@ cmd_rxreqsp(CMD_ARGS)
 					s->frame->type, "rx ## lctype"); \
 	}
 
-/* SECTION: h2.streams.prio.rxprio rxprio
+/* SECTION: h2.streams.spec.prio_rxprio rxprio
  *
  * Receive a PRIORITY frame
  */
 RXFUNC(prio,	PRIORITY)
 
-/* SECTION: h2.streams.reset.rxrst rxrst
+/* SECTION: h2.streams.spec.reset_rxrst rxrst
  *
  * Receive a RST_STREAM frame
  */
 RXFUNC(rst,	RST)
 
-/* SECTION: h2.streams.settings.rxsettings rxsettings
+/* SECTION: h2.streams.spec.settings_rxsettings rxsettings
  *
  * Receive a SETTINGS frame
  */
 RXFUNC(settings,SETTINGS)
 
-/* SECTION: h2.streams.ping.rxping rxping
+/* SECTION: h2.streams.spec.ping_rxping rxping
  *
  * Receive a PING frame
  */
 RXFUNC(ping,	PING)
 
-/* SECTION: h2.streams.goaway.rxgoaway rxgoaway
+/* SECTION: h2.streams.spec.goaway_rxgoaway rxgoaway
  *
  * Receive a GOAWAY frame
  */
 RXFUNC(goaway,	GOAWAY)
 
-/* SECTION: h2.streams.winup.rxwinup rxwinup
+/* SECTION: h2.streams.spec.winup_rxwinup rxwinup
  *
  * Receive a WINDOW_UPDATE frame
  */
@@ -1922,6 +1900,11 @@ cmd_h2_fatal(CMD_ARGS)
 		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
 }
 
+/* SECTION: h2.streams.spec Specification
+ *
+ * The specification of a stream follows the exact same rules as one for a
+ * client or a server.
+ */
 static const struct cmds stream_cmds[] = {
 	{ "expect",		cmd_http_expect },
 	{ "txframe",		cmd_txframe },
@@ -2069,25 +2052,48 @@ stream_run(struct stream *s)
 
 
 
-/* SECTION: h2.streams Streams
+/* SECTION: h1.both.spec.zstream stream
+ *
+ * H/2 introduces the concept of streams, and these come with their own
+ * specification, and as it's quite big, have bee move to thei own chapter.
+ *
+ * SECTION: h2.streams Stream
  *
  * Streams map roughly to a request in H/2, a request is sent on stream N,
  * the response too, then the stream is discarded. The main exception is the
  * first stream, 0, that serves as coordinator.
  *
- * Stream syntax follow the client/server one:
+ * Stream syntax follow the client/server one::
  *
- * * stream ID [SPEC] [ACTION]
+ *         stream ID [SPEC] [ACTION]
  *
  * ID is the H/2 stream number, while SPEC describes what will be done in that
  * stream.
  *
- * ACTION can be -start, -wait or -run, with the same meanings as for
- * client/server
+ * Note that, when parsing a stream action, if the entity isn't operating in H/2
+ * mode, these spec is ran before::
  *
- * Note that if the parent isn't yet operating in H/2 mode, the stream command
- * will trigger the the preface+settings sequence, effectively upgrading the
- * connection to H/2.
+ *         txpri/rxpri # client/server
+ *         stream 0 {
+ *             txsettings
+ *             rxsettings
+ *             txsettings -ack
+ *             rxsettings
+ *             expect settings.ack == true
+ *         } -run
+ *
+ * And H/2 mode is then activated before parsing the specification.
+ *
+ * SECTION: h2.streams.actions Actions
+ *
+ * \-start
+ *         Run the specification in a thread, giving back control immediately.
+ *
+ * \-wait
+ *         Wait for the started thread to finish running the spec.
+ *
+ * \-run
+ *         equivalent to calling ``-start`` then ``-wait``. 
  */
 
 void

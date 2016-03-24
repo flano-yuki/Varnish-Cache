@@ -48,6 +48,28 @@
 #include "vre.h"
 #include "vtcp.h"
 
+/* SECTION: h1.both Client/Server
+ *
+ * Clients and servers and called with this syntax::
+ *
+ *         client cNAME [OPTIONS] [SPEC] [ACTIONS]
+ *         server sNAME [OPTIONS] [SPEC] [ACTIONS]
+ *
+ * SECTION: h1.both.spec Specification
+ *
+ * It's a string, either double-quoted "like this", but most of the time
+ * enclosed in curly brackets, allowing multilining. Write a command per line in
+ * it, empty line are ignored, and long line can be wrapped by using a
+ * backslash. For example::
+ *
+ *     client c1 {
+ *         txreq -url /foo \
+ *               -hdr "bar: baz"
+ *
+ *         rxresp
+ *     } -run
+ */
+
 #define ONLY_CLIENT(hp, av)						\
 	do {								\
 		if (hp->h2)						\
@@ -1311,10 +1333,10 @@ cmd_http_fatal(CMD_ARGS)
 
 char PREFACE[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-/* SECTION: h1.client.txpri txpri
+/* SECTION: h1.both.spec.txpri txpri (client)
  *
- * Send an H/2 preface ("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") and set client to
- * H/2.
+ * Send an H/2 preface ("PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n") and set
+ * client to H/2.
  */
 static void
 cmd_http_txpri(CMD_ARGS)
@@ -1333,7 +1355,7 @@ cmd_http_txpri(CMD_ARGS)
 	AN(hp->h2);
 }
 
-/* SECTION: h1.server.rxpri rxpri
+/* SECTION: h1.both.spec.rxpri rxpri (server)
  *
  * Receive a preface, and if it matches, sets the server to H/2, abort fails
  * otherwise.
