@@ -473,7 +473,7 @@ receive_frame(void *priv) {
 				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 			}
-			iter = HPK_NewIter(s->hp->inctx, f->data + shift, f->size - shift);
+			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
 
 			while (s->nhdrs < MAX_HDR) {
 				r = HPK_DecHdr(iter, s->hdrs + s->nhdrs);
@@ -555,7 +555,7 @@ receive_frame(void *priv) {
 				i += 4;
 
 				if (t == 1 )
-					HPK_ResizeTbl(s->hp->outctx, v);
+					HPK_ResizeTbl(s->hp->encctx, v);
 
 				vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
 			}
@@ -882,29 +882,27 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		}
 	}
 	/* SECTION: h2.streams.spec.zexpect.ztable Index tables
-	 * intable.size / outtable.size
+	 * tbl.dec.size / tbl.enc.size
 	 *         Size (bytes) of the decoding/encoding table.
 	 *
-	 * intable.length / outtable.length
+	 * tbl.dec.length / tbl.enc.length
 	 *         Number of headers in decoding/encoding table.
 	 *
-	 * intable[INT].key / outtable[INT].key
+	 * tbl.dec[INT].key / tbl.enc[INT].key
 	 *         Name of the header at index INT of the decoding/encoding
 	 *         table.
 	 *
-	 * intable[INT].value / outtable[INT].value
+	 * tbl.dec[INT].value / tbl.enc[INT].value
 	 *         Value of the header at index INT of the decoding/encoding
 	 *         table.
 	 */
-	else if (!memcmp(spec, "intable", 7) ||
-			!memcmp(spec, "outtable", 8)) {
-		if (spec[0] == 'i') {
-			spec += 7;
-			ctx = s->hp->inctx;
-		} else {
-			spec += 8;
-			ctx = s->hp->outctx;
-		}
+	else if (!memcmp(spec, "tbl.dec", 7) ||
+			!memcmp(spec, "tbl.enc", 7)) {
+		if (spec[4] == 'd')
+			ctx = s->hp->decctx;
+		else
+			ctx = s->hp->encctx;
+		spec += 7;
 
 		if (1 == sscanf(spec, "[%u].key%n", &idx, &n) &&
 				spec[n] == '\0') {
@@ -1143,7 +1141,7 @@ cmd_tx11obj(CMD_ARGS)
 		}
 	}
 
-	iter = HPK_NewIter(s->hp->outctx, buf, 1024*2048);
+	iter = HPK_NewIter(s->hp->encctx, buf, 1024*2048);
 	while (*++av) {
 		hdr.t = hpk_not;
 		hdr.i = 0;
@@ -1556,7 +1554,7 @@ cmd_txsettings(CMD_ARGS)
 		}
 		else if (!strcmp(*av, "-hdrtbl")) {
 			PUT_KV(vl, hdrtbl, val, 0x1);
-			HPK_ResizeTbl(s->hp->inctx, val);
+			HPK_ResizeTbl(s->hp->decctx, val);
 		}
 		else if (!strcmp(*av, "-maxstreams")) {
 			PUT_KV(vl, maxstreams, val, 0x3);
@@ -2359,8 +2357,8 @@ start_h2(struct http *hp)
 
 	hp->h2 = 1;
 
-	hp->inctx = HPK_NewCtx(4096);
-	hp->outctx = HPK_NewCtx(4096);
+	hp->decctx = HPK_NewCtx(4096);
+	hp->encctx = HPK_NewCtx(4096);
 	AZ(pthread_create(&hp->tp, NULL, receive_frame, hp));
 }
 
@@ -2381,6 +2379,6 @@ stop_h2(struct http *hp)
 	AZ(pthread_mutex_unlock(&hp->mtx));
 	AZ(pthread_join(hp->tp, NULL));
 
-	HPK_FreeCtx(hp->inctx);
-	HPK_FreeCtx(hp->outctx);
+	HPK_FreeCtx(hp->decctx);
+	HPK_FreeCtx(hp->encctx);
 }

@@ -36,8 +36,8 @@ struct http {
 	VTAILQ_HEAD(, stream)   streams;
 	pthread_mutex_t		mtx;
 	pthread_cond_t          cond;
-	struct hpk_ctx		*outctx;
-	struct hpk_ctx		*inctx;
+	struct hpk_ctx		*encctx;
+	struct hpk_ctx		*decctx;
 	uint64_t		iws;
 	int64_t			ws;
 };

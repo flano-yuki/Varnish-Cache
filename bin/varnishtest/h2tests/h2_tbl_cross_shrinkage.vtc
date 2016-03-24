@@ -4,9 +4,9 @@ server s1 {
         stream 1 {
                 rxreq
                 txresp -litHdr inc plain hoge plain fuga
-                expect outtable[1].key == "hoge"
-                expect outtable[1].value == "fuga"
-                expect outtable.size == 40
+                expect tbl.enc[1].key == "hoge"
+                expect tbl.enc[1].value == "fuga"
+                expect tbl.enc.size == 40
 
         } -run
 
@@ -23,10 +23,10 @@ client c1 -connect ${s1_sock} {
         stream 1 {
                 txreq
                 rxresp
-                expect intable[1].key == "hoge"
-                expect intable[1].value == "fuga"
-                expect intable.size == 40
-                expect intable.length == 1
+                expect tbl.dec[1].key == "hoge"
+                expect tbl.dec[1].value == "fuga"
+                expect tbl.dec.size == 40
+                expect tbl.dec.length == 1
         } -run
 
         stream 3 { txreq		} -run 

@@ -9,41 +9,41 @@ server s1 {
 
 	stream 1 {
 		rxreq
-		expect intable[1].key == "location"
-		expect intable[1].value == "https://www.example.com"
-		expect intable[2].key == "date"
-		expect intable[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
-		expect intable[3].key == "cache-control"
-		expect intable[3].value == "private"
-		expect intable[4].key == ":status"
-		expect intable[4].value == "302"
-		expect intable.size == 222
+		expect tbl.dec[1].key == "location"
+		expect tbl.dec[1].value == "https://www.example.com"
+		expect tbl.dec[2].key == "date"
+		expect tbl.dec[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect tbl.dec[3].key == "cache-control"
+		expect tbl.dec[3].value == "private"
+		expect tbl.dec[4].key == ":status"
+		expect tbl.dec[4].value == "302"
+		expect tbl.dec.size == 222
 		txresp
 	} -run
 
 	stream 3 {
 		rxreq
-		expect intable[1].key == ":status"
-		expect intable[1].value == "307"
-		expect intable[2].key == "location"
-		expect intable[2].value == "https://www.example.com"
-		expect intable[3].key == "date"
-		expect intable[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
-		expect intable[4].key == "cache-control"
-		expect intable[4].value == "private"
-		expect intable.size == 222
+		expect tbl.dec[1].key == ":status"
+		expect tbl.dec[1].value == "307"
+		expect tbl.dec[2].key == "location"
+		expect tbl.dec[2].value == "https://www.example.com"
+		expect tbl.dec[3].key == "date"
+		expect tbl.dec[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect tbl.dec[4].key == "cache-control"
+		expect tbl.dec[4].value == "private"
+		expect tbl.dec.size == 222
 		txresp
 	} -run
 
 	stream 5 {
 		rxreq
-		expect intable[1].key == "set-cookie"
-		expect intable[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
-		expect intable[2].key == "content-encoding"
-		expect intable[2].value == "gzip"
-		expect intable[3].key == "date"
-		expect intable[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
-		expect intable.size == 215
+		expect tbl.dec[1].key == "set-cookie"
+		expect tbl.dec[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
+		expect tbl.dec[2].key == "content-encoding"
+		expect tbl.dec[2].value == "gzip"
+		expect tbl.dec[3].key == "date"
+		expect tbl.dec[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
+		expect tbl.dec.size == 215
 		txresp
 	} -run
 } -start
@@ -64,15 +64,15 @@ client c1 -connect ${s1_sock} {
 			-litIdxHdr inc 24 plain "private" \
 			-litIdxHdr inc 33 plain "Mon, 21 Oct 2013 20:13:21 GMT" \
 			-litIdxHdr inc 46 plain "https://www.example.com"
-		expect outtable[1].key == "location"
-		expect outtable[1].value == "https://www.example.com"
-		expect outtable[2].key == "date"
-		expect outtable[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
-		expect outtable[3].key == "cache-control"
-		expect outtable[3].value == "private"
-		expect outtable[4].key == ":status"
-		expect outtable[4].value == "302"
-		expect outtable.size == 222
+		expect tbl.enc[1].key == "location"
+		expect tbl.enc[1].value == "https://www.example.com"
+		expect tbl.enc[2].key == "date"
+		expect tbl.enc[2].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect tbl.enc[3].key == "cache-control"
+		expect tbl.enc[3].value == "private"
+		expect tbl.enc[4].key == ":status"
+		expect tbl.enc[4].value == "302"
+		expect tbl.enc.size == 222
 		rxresp
 	} -run
 
@@ -82,15 +82,15 @@ client c1 -connect ${s1_sock} {
 			-idxHdr 65 \
 			-idxHdr 64 \
 			-idxHdr 63
-		expect outtable[1].key == ":status"
-		expect outtable[1].value == "307"
-		expect outtable[2].key == "location"
-		expect outtable[2].value == "https://www.example.com"
-		expect outtable[3].key == "date"
-		expect outtable[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
-		expect outtable[4].key == "cache-control"
-		expect outtable[4].value == "private"
-		expect outtable.size == 222
+		expect tbl.enc[1].key == ":status"
+		expect tbl.enc[1].value == "307"
+		expect tbl.enc[2].key == "location"
+		expect tbl.enc[2].value == "https://www.example.com"
+		expect tbl.enc[3].key == "date"
+		expect tbl.enc[3].value == "Mon, 21 Oct 2013 20:13:21 GMT"
+		expect tbl.enc[4].key == "cache-control"
+		expect tbl.enc[4].value == "private"
+		expect tbl.enc.size == 222
 		rxresp
 	} -run
 
@@ -101,13 +101,13 @@ client c1 -connect ${s1_sock} {
 			-idxHdr 64 \
 			-litIdxHdr inc 26 plain "gzip" \
 			-litIdxHdr inc 55 plain "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
-		expect outtable[1].key == "set-cookie"
-		expect outtable[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
-		expect outtable[2].key == "content-encoding"
-		expect outtable[2].value == "gzip"
-		expect outtable[3].key == "date"
-		expect outtable[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
-		expect outtable.size == 215
+		expect tbl.enc[1].key == "set-cookie"
+		expect tbl.enc[1].value == "foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1"
+		expect tbl.enc[2].key == "content-encoding"
+		expect tbl.enc[2].value == "gzip"
+		expect tbl.enc[3].key == "date"
+		expect tbl.enc[3].value == "Mon, 21 Oct 2013 20:13:22 GMT"
+		expect tbl.enc.size == 215
 		rxresp
 	} -run
 
