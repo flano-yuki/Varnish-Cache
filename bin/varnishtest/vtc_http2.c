@@ -935,23 +935,30 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 * req.http.STRING / resp.http.STRING
 	 *         Value of the header STRING in the request/response.
 	 */
-	else if (!strcmp(spec, "req.bodylen")) {
-		RETURN_BUFFED(s->bodylen);
-	}
-	else if (!strcmp(spec, "resp.bodylen")) {
-		RETURN_BUFFED(s->bodylen);
-	}
-	else if (!strcmp(spec, "req.body")) {
-		return (s->body);
-	}
-	else if (!strcmp(spec, "resp.body")) {
-		return (s->body);
-	}
-	else if (!memcmp(spec, "req.http.", 9)) {
-		return (find_header(s, spec + 9, strlen(spec + 9)));
-	}
-	else if (!memcmp(spec, "resp.http.", 10)) {
-		return (find_header(s, spec + 10, strlen(spec + 10)));
+	else if (!memcmp(spec, "req.", 4) || !memcmp(spec, "resp.", 5)) {
+		if (spec[2] == 'q')
+			spec += 4;
+		else
+			spec += 5;
+		if (!strcmp(spec, "body"))
+			return (s->body);
+		else if (!strcmp(spec, "bodylen"))
+			RETURN_BUFFED(s->bodylen);
+		else if (!strcmp(spec, "status"))
+			return (find_header(s, ":status", strlen(":status")));
+		else if (!strcmp(spec, "url"))
+			return (find_header(s, ":path", strlen(":path")));
+		else if (!strcmp(spec, "method"))
+			return (find_header(s, ":method", strlen(":method")));
+		else if (!strcmp(spec, "authority"))
+			return (find_header(s, ":authority",
+						strlen(":authority")));
+		else if (!strcmp(spec, "scheme"))
+			return (find_header(s, ":scheme", strlen(":scheme")));
+		else if (!strncmp(spec, "http.", 5))
+			return (find_header(s, spec + 5, strlen(spec + 5)));
+		else
+			return (NULL);
 	}
 	else
 		return (spec);
