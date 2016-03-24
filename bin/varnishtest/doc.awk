@@ -10,7 +10,7 @@ p && $0 !~ "[ /]* SECTION: " {
 $0 ~ "[ /]* SECTION: " {
 	section = $3;
 	sl[len++] = section;
-	tl[section] = gensub(/^[\/ ]\* SECTION: [^ ]+ +/, "", "1", $0);
+	tl[section] = gensub(/[\t ]*\/?\* SECTION: [^ ]+ +/, "", "1", $0);
 	p = 1;
 }
 
@@ -27,8 +27,10 @@ END {
 			r = "*"
 		else if (c == 2)
 			r = "+"
-		else
+		else if (c == 3)
 			r = "-"
+		else
+			r = "."
 		print(gensub(/./, r, "g", tl[section]));
 		print(cl[section]);
 	}
