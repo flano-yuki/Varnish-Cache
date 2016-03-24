@@ -664,7 +664,16 @@ find_header(struct stream *s, char *k, int kl) {
 	}
 	return (NULL);
 }
-
+/* SECTION: h2.streams.spec.zexpect expect
+ *
+ * expect in stream works as it does in client or server, except that the
+ * elements compared will be different.
+ *
+ * Most of these elements will be frame specific, meaning that the last frame
+ * received on that stream must of the correct type.
+ *
+ * Here the list of keywords you can look at.
+ */
 static const char *
 cmd_var_resolve(struct stream *s, char *spec, char *buf)
 {
@@ -680,6 +689,12 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	AN(buf);
 
 	n = 0;
+	/* SECTION: h2.streams.spec.zexpect.ping PING specific
+	 * ping.data
+	 *         The 8-bytes string of the PING frame payload.
+	 * ping.ack (PING)
+	 *         "true" if the ACK flag was set, "false" otherwise.
+	 */
 	if (!strcmp(spec, "ping.data")) {
 		CHECK_LAST_FRAME(PING);
 		return (f->md.ping.data);
@@ -692,10 +707,24 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			snprintf(buf, 20, "false");
 		return (buf);
 	}
+	/* SECTION: h2.streams.spec.zexpect.winup WINDOW_UPDATE specific
+	 * winup.size
+	 *         The size of the upgrade given by the WINDOW_UPDATE frame.
+	 */
 	else if (!strcmp(spec, "winup.size")) {
 		CHECK_LAST_FRAME(WINUP);
 		RETURN_BUFFED(f->md.winup_size);
 	}
+	/* SECTION: h2.streams.spec.zexpect.prio PRIORITY specific
+	 * prio.stream
+	 *         The stream ID announced.
+	 *
+	 * prio.exclusive
+	 *         "true" if the priority is exclusive, else "false".
+	 *
+	 * prio.weight
+	 *         The dependency weight.
+	 */
 	else if (!strcmp(spec, "prio.stream")) {
 		CHECK_LAST_FRAME(PRIORITY);
 		RETURN_BUFFED(f->md.prio.stream);
@@ -712,10 +741,38 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		CHECK_LAST_FRAME(PRIORITY);
 		RETURN_BUFFED(f->md.prio.weight);
 	}
+	/* SECTION: h2.streams.spec.zexpect.rst RESET_STREAM specific
+	 * rst.err
+	 *         The error code (as integer) of the RESET_STREAM frame.
+	 */
 	else if (!strcmp(spec, "rst.err")) {
 		CHECK_LAST_FRAME(RST);
 		RETURN_BUFFED(f->md.rst_err);
-	} /* SETTINGS */
+	}
+	/* SECTION: h2.streams.spec.zexpect.settings SETTINGS specific
+	 *
+	 * settings.ack
+	 *         "true" if the ACK flag was set, else ""false.
+	 *
+	 * settings.push
+	 *         "true" if the push settings was set to yes, "false" if set to
+	 *         no, and <undef> if not present.
+	 *
+	 * settings.hdrtbl
+	 *         Value of HEADER_TABLE_SIZE if set, <undef> otherwise.
+	 *
+	 * settings.maxstreams
+	 *         Value of MAX_CONCURRENT_STREAMS if set, <undef> otherwise.
+	 *
+	 * settings.winsize
+	 *         Value of INITIAL_WINDOW_SIZE if set, <undef> otherwise.
+	 *
+	 * setting.framesize
+	 *         Value of MAX_FRAME_SIZE if set, <undef> otherwise.
+	 *
+	 * settings.hdrsize
+	 *         Value of MAX_HEADER_LIST_SIZE if set, <undef> otherwise.
+	 */
 	else if (!strncmp(spec, "settings.", 9)) {
 		CHECK_LAST_FRAME(SETTINGS);
 		spec += 9;
@@ -740,7 +797,17 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "winsize"))    { RETURN_SETTINGS(4); }
 		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
 		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
-	} /* GOAWAY */
+	}
+	/* SECTION: h2.streams.spec.zexpect.goaway GOAWAY specific
+	 * goaway.err
+	 *         The error code (as integer) of the GOAWAY frame.
+	 *
+	 * goaway.laststream
+	 *         Last-Stream-ID
+	 *
+	 * goaway.debug
+	 *         Debug data, if any.
+	 */
 	else if (!strncmp(spec, "goaway.", 7)) {
 		spec += 7;
 		CHECK_LAST_FRAME(GOAWAY);
@@ -754,7 +821,21 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "debug")) {
 			return (f->md.goaway.debug);
 		}
-	} /* GENERIC FRAME */
+	}
+	/* SECTION: h2.streams.spec.zexpect.zframe Generic frame
+	 * frame.data
+	 *         Payload of the last frame
+	 *
+	 * frame.type
+	 *         Type of the frame, as integer.
+	 *
+	 * frame.size
+	 *         Size of the frame
+	 *
+	 * frame.stream
+	 *         Stream of the frame (correspond to the one you are executing
+	 *         this from, obviously).
+	 */
 	else if (!strncmp(spec, "frame.", 6)) {
 		spec += 6;
 		if (!f)
@@ -764,6 +845,17 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
 		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
 	}
+	/* SECTION: h2.streams.spec.zexpect.zstream Stream
+	 * stream.window
+	 *         The current window size of the stream, or, if on stream 0,
+	 *         of the connection.
+	 *
+	 * stream.weight
+	 *         Weight of the stream
+	 *
+	 * stream.dependency
+	 *         Id of the stream this one depends on.
+	 */
 	else if (!strcmp(spec, "stream.window")) {
 		if (s->id) {
 			snprintf(buf, 20, "%ld", s->ws);
@@ -789,6 +881,21 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			return NULL;
 		}
 	}
+	/* SECTION: h2.streams.spec.zexpect.ztable Index tables
+	 * intable.size / outtable.size
+	 *         Size (bytes) of the decoding/encoding table.
+	 *
+	 * intable.length / outtable.length
+	 *         Number of headers in decoding/encoding table.
+	 *
+	 * intable[INT].key / outtable[INT].key
+	 *         Name of the header at index INT of the decoding/encoding
+	 *         table.
+	 *
+	 * intable[INT].value / outtable[INT].value
+	 *         Value of the header at index INT of the decoding/encoding
+	 *         table.
+	 */
 	else if (!memcmp(spec, "intable", 7) ||
 			!memcmp(spec, "outtable", 8)) {
 		if (spec[0] == 'i') {
@@ -816,6 +923,20 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 			RETURN_BUFFED(HPK_GetTblLength(ctx));
 		}
 	}
+	/* SECTION: h2.streams.spec.zexpect.zre Request and response
+	 *
+	 * Note: it's possible to inspect a request or response while it is
+	 * still being construct (in-between two frames for example).
+	 *
+	 * req.bodylen / resp.bodylen
+	 *         Length in bytes of the request/response so far.
+	 *
+	 * req.body / resp.body
+	 *         Body of the request/response so far.
+	 *
+	 * req.http.STRING / resp.http.STRING
+	 *         Value of the header STRING in the request/response.
+	 */
 	else if (!strcmp(spec, "req.bodylen")) {
 		RETURN_BUFFED(s->bodylen);
 	}
