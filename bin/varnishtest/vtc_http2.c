@@ -2147,11 +2147,6 @@ cmd_stream(CMD_ARGS)
 	}
 }
 
-static const struct cmds http2_cmds[] = {
-	{ "delay",		cmd_delay },
-	{ NULL,			NULL }
-};
-
 void
 start_h2(struct http *hp)
 {
