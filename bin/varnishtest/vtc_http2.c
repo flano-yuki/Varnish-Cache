@@ -934,6 +934,21 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 *
 	 * req.http.STRING / resp.http.STRING
 	 *         Value of the header STRING in the request/response.
+	 *
+	 * req.status / resp.status
+	 *         :status pseudo-header's value.
+	 *
+	 * req.url / resp.url
+	 *         :path pseudo-header's value.
+	 *
+	 * req.method / resp.method
+	 *         :method pseudo-header's value.
+	 *
+	 * req.authority / resp.authority
+	 *         :method pseudo-header's value.
+	 *
+	 * req.scheme / resp.scheme
+	 *         :method pseudo-header's value.
 	 */
 	else if (!memcmp(spec, "req.", 4) || !memcmp(spec, "resp.", 5)) {
 		if (spec[2] == 'q')
