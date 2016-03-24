@@ -54,8 +54,8 @@ EXTRA_DIST = $(top_srcdir)/bin/varnishtest/tests/*.vtc \
 	$(top_srcdir)/bin/varnishtest/tests/README
 
 pdf: vtc_doc.pdf
-vtc_doc.pdf: vtc_doc.rst
-	rst2pdf $< -o $@
+vtc_doc.pdf: vtc_doc_hdr.rst vtc_doc.rst
+	cat $^ | rst2pdf -o $@
 
 vtc_doc.rst: vtc.c vtc_http2.c vtc_http.c
 	awk -f doc.awk $^ > $@
