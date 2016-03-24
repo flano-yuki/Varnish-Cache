@@ -910,6 +910,80 @@ clean_headers(struct stream *s) {
 }
 
 /* handles txcont, txreq and txresp */
+/* SECTION: h2.streams.spec.data_hdrs txreq, txresp, txcont
+ *
+ * These three commands are about sending headers. txreq and txresp will send
+ * HEADER frames will txcont will send CONTINUATION frames. The only difference
+ * between txreq and txresp are the default headers set by each of them.
+ *
+ * \-noadd
+ *         Do not add default headers. Useful to avoid duplicates when sending
+ *         default headers using ``-hdr``, ``-idxHdr`` and ``-litIdxHdr``.
+ *
+ * \-status INT (txresp)
+ *         Set the :status pseudo-header.
+ *
+ * \-url STRING (txreq)
+ *         Set the :path pseudo-header.
+ *
+ * \-req STRING (txreq)
+ *         Set the :method pseudo-header.
+ *
+ * \-scheme STRING (txreq)
+ *         Set the :scheme pseudo-header.
+ *
+ * \-hdr STRING1 STRING2
+ *         Insert a header, STRING1 being the name, and STRING2 the value.
+ *
+ * \-idxHdr INT
+ *         Insert an indexed header, using INT as index.
+ *
+ * \-litIdxHdr inc|not|never INT huf|plain STRING
+ *         Insert an literal, indexed header. The first argument specify if the
+ *         header should be added to the table, shouldn't, or mustn't be
+ *         compressed if/when retransmitted.
+ *
+ *         INT is the idex of the header name to use.
+ *
+ *         The third argument informs about the Huffman encoding: yes (huf) or
+ *         no (plain).
+ *
+ *         The last term is the literal value of the header.
+ *
+ * \-litHdr inc|not|never huf|plain STRING1 huf|plain STRING2
+ *         Insert a literal header, with the same first argument as
+ *         ``-litIdxHdr``.
+ *
+ *         The second and third terms tell what the name of the header is and if
+ *         it should be Huffman-encoded, while the last two do the same
+ *         regarding the value.
+ *
+ * \-body STRING (txreq, txresp)
+ *         Specify a body, effectively putting STRING into a DATA frame after
+ *         the HEADER frame is sent.
+ *
+ * \-bodylen INT (txreq, txresp)
+ *         Do the same thing as ``-body`` but generate an string of INT length
+ *         for you.
+ *
+ * \-nostrend (txreq, txresp)
+ *         Don't set the END_STREAM flag automatically, making the peer expect
+ *         a body after the headers.
+ *
+ * \-nohdrend
+ *         Don't set the END_HEADERS flag automatically, making the peer expect
+ *         more HEADER frames.
+ *
+ * \-dep INT
+ *         Tell the peer that this content depends on the stream with the INT
+ *         id.
+ *
+ * \-ex
+ *         Make the dependency exclusive (``-dep`` is still needed).
+ *
+ * \-weight
+ *         Set the weight for the dependency.
+ */
 static void
 cmd_tx11obj(CMD_ARGS)
 {
@@ -1132,8 +1206,7 @@ cmd_tx11obj(CMD_ARGS)
 	free(body);
 }
 
-/*
- * SECTION: h2.streams.spec.data_txdata txdata
+/* SECTION: h2.streams.spec.data_txdata txdata
  *
  * By default, data frames are empty. The receiving end will know the whole body
  * has been delivered thanks to the END_STREAM flag set in the last DATA frame,
@@ -2055,7 +2128,7 @@ stream_run(struct stream *s)
 /* SECTION: h1.both.spec.zstream stream
  *
  * H/2 introduces the concept of streams, and these come with their own
- * specification, and as it's quite big, have bee move to thei own chapter.
+ * specification, and as it's quite big, have bee move to their own chapter.
  *
  * SECTION: h2.streams Stream
  *
