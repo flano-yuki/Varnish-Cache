@@ -1158,10 +1158,12 @@ cmd_tx11obj(CMD_ARGS)
 		f.type = TYPE_HEADERS;
 		f.flags |= END_STREAM;
 		if (!strcmp(cmd_str, "txreq")) {
+			ONLY_CLIENT(s->hp, av);
 			req_done = 0;
 			url_done = 0;
 			scheme_done = 0;
 		} else {
+			ONLY_SERVER(s->hp, av);
 			status_done = 0;
 		}
 	}
@@ -1944,10 +1946,13 @@ cmd_rxreqsp(CMD_ARGS)
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
-	if (!strcmp(av[0], "rxreq"))
+	if (!strcmp(av[0], "rxreq")) {
+		ONLY_SERVER(s->hp, av);
 		clean_headers(s->req);
-	else
+	} else {
+		ONLY_CLIENT(s->hp, av);
 		clean_headers(s->resp);
+	}
 	f = rxstuff(s);
 	if (!f)
 		return;
