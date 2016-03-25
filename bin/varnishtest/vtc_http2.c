@@ -147,6 +147,7 @@ struct stream {
 
 	int			dependency;
 	int			weight;
+	int			expect_push;
 };
 
 #define ONLY_CLIENT(hp, av)						\
@@ -476,10 +477,15 @@ receive_frame(void *priv) {
 			}
 			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
 
-			if (hp->sfd)
+			if (hp->sfd || s->expect_push)
 				h = s->req;
 			else
 				h = s->resp;
+
+			/* as soon as the headers are done, fall bak to regular
+			 * operation mode */
+			if (f->flags & END_HEADERS)
+				s->expect_push = 0;
 
 			n = 0;
 			while (n < MAX_HDR && h[n].t)
@@ -1136,7 +1142,7 @@ cmd_tx11obj(CMD_ARGS)
 	int req_done = 1;
 	int url_done = 1;
 	int scheme_done = 1;
-	uint32_t stid = 0;
+	uint32_t stid = 0, pstid;
 	uint32_t weight = 16;
 	int exclusive = 0;
 	char buf[1024*2048];
@@ -1154,21 +1160,32 @@ cmd_tx11obj(CMD_ARGS)
 
 	INIT_FRAME(f, CONT, 0, s->id, END_HEADERS);
 
-	if (strcmp(cmd_str, "txcont")) {
+	if (!strcmp(cmd_str, "txreq")) {
+		ONLY_CLIENT(s->hp, av);
 		f.type = TYPE_HEADERS;
 		f.flags |= END_STREAM;
-		if (!strcmp(cmd_str, "txreq")) {
-			ONLY_CLIENT(s->hp, av);
-			req_done = 0;
-			url_done = 0;
-			scheme_done = 0;
-		} else {
-			ONLY_SERVER(s->hp, av);
-			status_done = 0;
-		}
+		req_done = 0;
+		url_done = 0;
+		scheme_done = 0;
+	} else if (!strcmp(cmd_str, "txresp")) {
+		ONLY_SERVER(s->hp, av);
+		f.type = TYPE_HEADERS;
+		f.flags |= END_STREAM;
+		status_done = 0;
+	} else if (!strcmp(cmd_str, "txpush")) {
+		ONLY_SERVER(s->hp, av);
+		f.type = TYPE_PUSH;
+		req_done = 0;
+		url_done = 0;
+		scheme_done = 0;
 	}
 
-	iter = HPK_NewIter(s->hp->encctx, buf, 1024*2048);
+	if (f.type == TYPE_PUSH) {
+		*buf = 0;
+		iter = HPK_NewIter(s->hp->encctx, buf + 4, 1024*2048 - 4);
+	} else
+		iter = HPK_NewIter(s->hp->encctx, buf, 1024*2048);
+
 	while (*++av) {
 		hdr.t = hpk_not;
 		hdr.i = 0;
@@ -1272,30 +1289,39 @@ cmd_tx11obj(CMD_ARGS)
 			vtc_log(vl, 4,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
 			HPK_EncHdr(iter, &hdr);
 		} else if (!strcmp(*av, "-body") &&
-				strcmp(cmd_str, "txcont")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 			AZ(body);
 			REPLACE(body, av[1]);
 			f.flags &= ~END_STREAM;
 			av++;
 		} else if (!strcmp(*av, "-bodylen") &&
-				strcmp(cmd_str, "txcont")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 			AZ(body);
 			body = synth_body(av[1], 0);
 			f.flags &= ~END_STREAM;
 			av++;
 		} else if (!strcmp(*av, "-nostrend") &&
-				strcmp(cmd_str, "txcont")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 			f.flags &= ~END_STREAM;
 		} else if (!strcmp(*av, "-nohdrend")) {
 			f.flags &= ~END_HEADERS;
-		} else if (!strcmp(*av, "-dep")) {
+		} else if (!strcmp(*av, "-dep") &&
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 		        av++;
 		        STRTOU32(stid, *av, p, vl, "-dep");
 		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-ex")) {
+		} else if (!strcmp(*av, "-ex") &&
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 		        exclusive = 1 << 31;
 		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-weight")) {
+		} else if (!strcmp(*av, "-weight") &&
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txresp"))) {
 		        av++;
 		        STRTOU32(weight, *av, p, vl, "-weight");
 		        if (weight >= 256)
@@ -1303,6 +1329,15 @@ cmd_tx11obj(CMD_ARGS)
 		                        "Weight must be a 8-bits integer "
 		                                "(found %s)", *av);
 		        f.flags |= PRIORITY;
+		} else if (!strcmp(*av, "-promised") &&
+				!strcmp(cmd_str, "txpush")) {
+			++av;
+			STRTOU32(pstid, *av, p, vl, "-promised");
+			if (pstid & (1 << 31)) {
+				vtc_log(vl, 0, "-promised must be a 31-bits integer "
+						"(found %s)", *av);
+			}
+			*ubuf = htonl(pstid);
 		} else
 			break;
 	}
@@ -1328,8 +1363,9 @@ cmd_tx11obj(CMD_ARGS)
 		s->weight = weight & 0xff;
 		s->dependency = stid;
 
+		assert(f.size + 5 < 1024*2048);
 	        memmove(buf + 5, buf, f.size);
-		*(uint32_t *)ubuf = htonl(stid | exclusive);
+		*ubuf = htonl(stid | exclusive);
 		buf[4] = s->weight;
 		f.size += 5;
 
@@ -1609,14 +1645,6 @@ cmd_txsettings(CMD_ARGS)
 	write_frame(hp, &f, 0);
 	AZ(pthread_mutex_unlock(&hp->mtx));
 }
-
-/*
-static void
-cmd_txpush(CMD_ARGS)
-
-static void
-cmd_rxpush(CMD_ARGS)
-*/
 
 /* SECTION: h2.streams.spec.ping_txping txping
  *
@@ -1978,6 +2006,43 @@ cmd_rxreqsp(CMD_ARGS)
 	s->frame = f;
 }
 
+static void
+cmd_rxpush(CMD_ARGS) {
+	struct stream *s;
+	struct frame *f = NULL;
+	char *p;
+	int loop = 0;
+	int times = 1;
+	int rcv = 0;
+	// XXX make it an enum
+	int expect = TYPE_PUSH;
+
+	(void)cmd;
+	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
+	s->expect_push = 1;
+
+	while (*++av) {
+		if (!strcmp(*av, "-some")) {
+			STRTOU32(times, *av, p, vl, "-some");
+			AN(times);
+		} else if (!strcmp(*av, "-all")) {
+			loop = 1;
+		} else
+			break;
+	}
+	if (*av != NULL)
+		vtc_log(vl, 0, "Unknown rxpush spec: %s\n", *av);
+
+	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
+		f = rxstuff(s);
+		if (!f)
+			return;
+		CHKFRAME(f->type, expect, rcv, "rxpush");
+		expect = TYPE_CONT;
+	}
+	s->frame = f;
+}
+
 #define RXFUNC(lctype, upctype) \
 	static void \
 	cmd_rx ## lctype(CMD_ARGS) { \
@@ -2147,7 +2212,8 @@ static const struct cmds stream_cmds[] = {
 	{ "rxrst",		cmd_rxrst },
 	{ "txsettings",		cmd_txsettings },
 	{ "rxsettings",		cmd_rxsettings },
-	//push
+	{ "txpush",		cmd_tx11obj },
+	{ "rxpush",		cmd_rxpush },
 	{ "txping",		cmd_txping },
 	{ "rxping",		cmd_rxping },
 	{ "txgoaway",		cmd_txgoaway },
