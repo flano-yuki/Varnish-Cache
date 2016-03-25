@@ -254,6 +254,7 @@ struct frame {
 			char	 *debug;
 		}		goaway;
 		uint32_t	winup_size;
+		uint32_t	promised;
 	} md;
 };
 
@@ -809,6 +810,10 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
 		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
 	}
+	else if (!strcmp(spec, "push.id")) {
+		CHECK_LAST_FRAME(PUSH);
+		RETURN_BUFFED(f->md.promised);
+	}
 	/* SECTION: h2.streams.spec.zexpect.goaway GOAWAY specific
 	 * goaway.err
 	 *         The error code (as integer) of the GOAWAY frame.
@@ -1059,12 +1064,12 @@ clean_headers(struct hpk_hdr *h) {
 	free(hdr.value.ptr); \
 }
 
-/* handles txcont, txreq and txresp */
-/* SECTION: h2.streams.spec.data_hdrs txreq, txresp, txcont
+/* SECTION: h2.streams.spec.data_0 txreq, txresp, txcont, txpush
  *
- * These three commands are about sending headers. txreq and txresp will send
- * HEADER frames will txcont will send CONTINUATION frames. The only difference
- * between txreq and txresp are the default headers set by each of them.
+ * These four commands are about sending headers. txreq,  txresp will send
+ * HEADER frames, txcont will send CONTINUATION frames, and txpush PUSH frames.
+ * The only difference between txreq and txresp are the default headers set by
+ * each of them.
  *
  * \-noadd
  *         Do not add default headers. Useful to avoid duplicates when sending
@@ -1394,7 +1399,7 @@ cmd_tx11obj(CMD_ARGS)
 	free(body);
 }
 
-/* SECTION: h2.streams.spec.data_txdata txdata
+/* SECTION: h2.streams.spec.data_1 txdata
  *
  * By default, data frames are empty. The receiving end will know the whole body
  * has been delivered thanks to the END_STREAM flag set in the last DATA frame,
@@ -1850,6 +1855,18 @@ rxstuff(struct stream *s) {
 				rcv, func, rt, wt); \
 	}
 
+/* SECTION: h2.streams.spec.data_12 rxhdrs
+ *
+ * ``rxhdrs`` will expect one HEADER frame, then, depending on the arguments,
+ * zero or more CONTINUATION frame.
+ *
+ * \-all
+ *         Keep waiting for CONTINUATION frames until END_HEADERS flag is seen.
+ *
+ * \-some INT
+ *         Retrieve INT - 1 CONTINUATION frames after the HEADER frame.
+ *
+ */
 static void
 cmd_rxhdrs(CMD_ARGS)
 {
@@ -1922,7 +1939,7 @@ cmd_rxcont(CMD_ARGS)
 }
 
 
-/* SECTION: h2.streams.spec.data_rxdata rxdata
+/* SECTION: h2.streams.spec.data_13 rxdata
  *
  * Receiving data is done using the ``rxdata`` keywords and will retrieve one
  * DATA frame, if you wish to receive more, you can use these two convenience
@@ -1969,6 +1986,13 @@ cmd_rxdata(CMD_ARGS)
 	s->frame = f;
 }
 
+/* SECTION: h2.streams.spec.data_10 rxreq, rxresp
+ *
+ * These are two convenience functions to receive headers and body of an
+ * incoming request or response. The only difference is that rxreq can only be
+ * by a server, and rxresp by a client.
+ *
+ */
 static void
 cmd_rxreqsp(CMD_ARGS)
 {
@@ -2012,6 +2036,18 @@ cmd_rxreqsp(CMD_ARGS)
 	s->frame = f;
 }
 
+/* SECTION: h2.streams.spec.data_11 rxpush
+ *
+ * This works like ``rxhdrs``, expecting a PUSH frame and then zero or more
+ * CONTINUATION frames.
+ *
+ * \-all
+ *         Keep waiting for CONTINUATION frames until END_HEADERS flag is seen.
+ *
+ * \-some INT
+ *         Retrieve INT - 1 CONTINUATION frames after the PUSH frame.
+ *
+ */
 static void
 cmd_rxpush(CMD_ARGS) {
 	struct stream *s;
