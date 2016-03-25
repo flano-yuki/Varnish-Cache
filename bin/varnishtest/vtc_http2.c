@@ -810,6 +810,10 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "framesize"))  { RETURN_SETTINGS(5); }
 		else if (!strcmp(spec, "hdrsize"))    { RETURN_SETTINGS(6); }
 	}
+	/* SECTION: h2.streams.spec.zexpect.push PUSH specific
+	 * push.id
+	 *         The id of the promised stream.
+	 */
 	else if (!strcmp(spec, "push.id")) {
 		CHECK_LAST_FRAME(PUSH);
 		RETURN_BUFFED(f->md.promised);
