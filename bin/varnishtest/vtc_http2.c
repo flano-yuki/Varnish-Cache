@@ -1133,6 +1133,9 @@ clean_headers(struct hpk_hdr *h) {
  *
  * \-weight
  *         Set the weight for the dependency.
+ *
+ * \-promised INT (txpush)
+ *         The id of the promised stream.
  */
 static void
 cmd_tx11obj(CMD_ARGS)
