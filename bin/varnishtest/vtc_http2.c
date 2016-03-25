@@ -1209,17 +1209,20 @@ cmd_tx11obj(CMD_ARGS)
 			av++;
 			status_done = 1;
 		} else if (!strcmp(*av, "-url") &&
-				!strcmp(cmd_str, "txreq")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txpush"))) {
 			ENC(hdr, ":path", av[1]);
 			av++;
 			url_done = 1;
 		} else if (!strcmp(*av, "-req") &&
-				!strcmp(cmd_str, "txreq")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txpush"))) {
 			ENC(hdr, ":method", av[1]);
 			av++;
 			req_done = 1;
 		} else if (!strcmp(*av, "-scheme") &&
-				!strcmp(cmd_str, "txreq")) {
+				(!strcmp(cmd_str, "txreq") ||
+				 !strcmp(cmd_str, "txpush"))) {
 			ENC(hdr, ":scheme", av[1]);
 			av++;
 			scheme_done = 1;
