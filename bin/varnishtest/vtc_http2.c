@@ -142,7 +142,8 @@ struct stream {
 
 	char			*body;
 	int			bodylen;
-	struct hpk_hdr		hdrs[MAX_HDR];
+	struct hpk_hdr		req[MAX_HDR];
+	struct hpk_hdr		resp[MAX_HDR];
 
 	int			dependency;
 	int			weight;
@@ -459,6 +460,7 @@ receive_frame(void *priv) {
 			int shift = 0;
 			int exclusive = 0;
 			int n;
+			struct hpk_hdr *h;
 			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
 				shift = 5;
 				n = ntohl(*(uint32_t*)f->data);
@@ -474,18 +476,23 @@ receive_frame(void *priv) {
 			}
 			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
 
+			if (hp->sfd)
+				h = s->req;
+			else
+				h = s->resp;
+
 			n = 0;
-			while (n < MAX_HDR && s->hdrs[n].t)
+			while (n < MAX_HDR && h[n].t)
 				n++;
 			while (n < MAX_HDR) {
-				r = HPK_DecHdr(iter, s->hdrs + n);
+				r = HPK_DecHdr(iter, h + n);
 				if (r == hpk_err )
 					break;
 				vtc_log(hp->vl, 4,
 						"s%lu - header: %s : %s (%d)",
 						s->id,
-						s->hdrs[n].key.ptr,
-						s->hdrs[n].value.ptr,
+						h[n].key.ptr,
+						h[n].value.ptr,
 						n);
 				n++;
 				if (r == hpk_done)
@@ -652,10 +659,7 @@ do { \
 } while (0)
 
 static char *
-find_header(struct stream *s, char *k, int kl) {
-	struct hpk_hdr *h = s->hdrs;
-
-	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+find_header(const struct hpk_hdr *h, char *k, int kl) {
 	AN(k);
 
 	while (h->t) {
@@ -952,27 +956,30 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 *         :method pseudo-header's value.
 	 */
 	else if (!memcmp(spec, "req.", 4) || !memcmp(spec, "resp.", 5)) {
-		if (spec[2] == 'q')
+		if (spec[2] == 'q') {
+			h = s->req;
 			spec += 4;
-		else
+		} else {
+			h = s->resp;
 			spec += 5;
+		}
 		if (!strcmp(spec, "body"))
 			return (s->body);
 		else if (!strcmp(spec, "bodylen"))
 			RETURN_BUFFED(s->bodylen);
 		else if (!strcmp(spec, "status"))
-			return (find_header(s, ":status", strlen(":status")));
+			return (find_header(h, ":status", strlen(":status")));
 		else if (!strcmp(spec, "url"))
-			return (find_header(s, ":path", strlen(":path")));
+			return (find_header(h, ":path", strlen(":path")));
 		else if (!strcmp(spec, "method"))
-			return (find_header(s, ":method", strlen(":method")));
+			return (find_header(h, ":method", strlen(":method")));
 		else if (!strcmp(spec, "authority"))
-			return (find_header(s, ":authority",
+			return (find_header(h, ":authority",
 						strlen(":authority")));
 		else if (!strcmp(spec, "scheme"))
-			return (find_header(s, ":scheme", strlen(":scheme")));
+			return (find_header(h, ":scheme", strlen(":scheme")));
 		else if (!strncmp(spec, "http.", 5))
-			return (find_header(s, spec + 5, strlen(spec + 5)));
+			return (find_header(h, spec + 5, strlen(spec + 5)));
 		else
 			return (NULL);
 	}
@@ -1022,19 +1029,15 @@ cmd_txframe(CMD_ARGS)
 }
 
 static void
-clean_headers(struct stream *s) {
-	struct hpk_hdr *h = s->hdrs;
-	
-	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
-
+clean_headers(struct hpk_hdr *h) {
 	while (h->t) {
 		if (h->key.len)
 			free(h->key.ptr);
 		if (h->value.len)
 			free(h->value.ptr);
+		memset(h, 0, sizeof(*h));
 		h++;
 	}
-	memset(s->hdrs, 0, sizeof(s->hdrs));
 }
 
 #define ENC(hdr, k, v) \
@@ -1941,7 +1944,10 @@ cmd_rxreqsp(CMD_ARGS)
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
 
-	clean_headers(s);
+	if (!strcmp(av[0], "rxreq"))
+		clean_headers(s->req);
+	else
+		clean_headers(s->resp);
 	f = rxstuff(s);
 	if (!f)
 		return;
@@ -2163,7 +2169,8 @@ stream_thread(void *priv)
 
 	parse_string(s->spec, stream_cmds, s, s->hp->vl);
 
-	clean_headers(s);
+	clean_headers(s->req);
+	clean_headers(s->resp);
 	vtc_log(s->hp->vl, 2, "Ending stream %lu", s->id);
 	return (NULL);
 }
