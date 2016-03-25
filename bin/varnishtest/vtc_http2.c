@@ -901,8 +901,8 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 *         Value of the header at index INT of the decoding/encoding
 	 *         table.
 	 */
-	else if (!memcmp(spec, "tbl.dec", 7) ||
-			!memcmp(spec, "tbl.enc", 7)) {
+	else if (!strncmp(spec, "tbl.dec", 7) ||
+			!strncmp(spec, "tbl.enc", 7)) {
 		if (spec[4] == 'd')
 			ctx = s->hp->decctx;
 		else
@@ -955,7 +955,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 * req.scheme / resp.scheme
 	 *         :method pseudo-header's value.
 	 */
-	else if (!memcmp(spec, "req.", 4) || !memcmp(spec, "resp.", 5)) {
+	else if (!strncmp(spec, "req.", 4) || !strncmp(spec, "resp.", 5)) {
 		if (spec[2] == 'q') {
 			h = s->req;
 			spec += 4;
