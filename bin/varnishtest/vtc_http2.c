@@ -143,7 +143,6 @@ struct stream {
 	char			*body;
 	int			bodylen;
 	struct hpk_hdr		hdrs[MAX_HDR];
-	int			nhdrs;
 
 	int			dependency;
 	int			weight;
@@ -475,17 +474,20 @@ receive_frame(void *priv) {
 			}
 			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
 
-			while (s->nhdrs < MAX_HDR) {
-				r = HPK_DecHdr(iter, s->hdrs + s->nhdrs);
+			n = 0;
+			while (n < MAX_HDR && s->hdrs[n].t)
+				n++;
+			while (n < MAX_HDR) {
+				r = HPK_DecHdr(iter, s->hdrs + n);
 				if (r == hpk_err )
 					break;
 				vtc_log(hp->vl, 4,
 						"s%lu - header: %s : %s (%d)",
 						s->id,
-						s->hdrs[s->nhdrs].key.ptr,
-						s->hdrs[s->nhdrs].value.ptr,
-						s->nhdrs);
-				s->nhdrs++;
+						s->hdrs[n].key.ptr,
+						s->hdrs[n].value.ptr,
+						n);
+				n++;
 				if (r == hpk_done)
 					break;
 			}
@@ -652,12 +654,11 @@ do { \
 static char *
 find_header(struct stream *s, char *k, int kl) {
 	struct hpk_hdr *h = s->hdrs;
-	int n = s->nhdrs;
 
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	AN(k);
 
-	while (n--) {
+	while (h->t) {
 		if (kl == h->key.len  && !memcmp(h->key.ptr, k, kl))
 			return h->value.ptr;
 		h++;
@@ -1026,14 +1027,13 @@ clean_headers(struct stream *s) {
 	
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 
-	while (s->nhdrs--) {
+	while (h->t) {
 		if (h->key.len)
 			free(h->key.ptr);
 		if (h->value.len)
 			free(h->value.ptr);
 		h++;
 	}
-	s->nhdrs = 0;
 	memset(s->hdrs, 0, sizeof(s->hdrs));
 }
 

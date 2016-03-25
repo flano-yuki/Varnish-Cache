@@ -7,7 +7,8 @@ enum hpk_result{
 };
 
 enum hpk_indexed {
-	hpk_idx = 0,
+	hpk_unset = 0,
+	hpk_idx,
 	hpk_inc,
 	hpk_not,
 	hpk_never,
