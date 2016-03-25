@@ -1073,13 +1073,13 @@ clean_headers(struct hpk_hdr *h) {
  * \-status INT (txresp)
  *         Set the :status pseudo-header.
  *
- * \-url STRING (txreq)
+ * \-url STRING (txreq, txpush)
  *         Set the :path pseudo-header.
  *
- * \-req STRING (txreq)
+ * \-req STRING (txreq, txpush)
  *         Set the :method pseudo-header.
  *
- * \-scheme STRING (txreq)
+ * \-scheme STRING (txreq, txpush)
  *         Set the :scheme pseudo-header.
  *
  * \-hdr STRING1 STRING2
@@ -1124,14 +1124,14 @@ clean_headers(struct hpk_hdr *h) {
  *         Don't set the END_HEADERS flag automatically, making the peer expect
  *         more HEADER frames.
  *
- * \-dep INT
+ * \-dep INT (txreq, txresp)
  *         Tell the peer that this content depends on the stream with the INT
  *         id.
  *
- * \-ex
+ * \-ex (txreq, txresp)
  *         Make the dependency exclusive (``-dep`` is still needed).
  *
- * \-weight
+ * \-weight (txreq, txresp)
  *         Set the weight for the dependency.
  *
  * \-promised INT (txpush)
