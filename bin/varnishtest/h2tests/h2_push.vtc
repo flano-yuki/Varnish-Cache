@@ -5,18 +5,18 @@ server s1 {
 		rxreq
 		txpush -promised 2 -url "/hereyougo"
 		txresp
-	} run
+	} -run
 } -start
 
 client c1 -connect ${s1_sock} {
 	stream 1 {
 		txreq
 		rxpush
-		expect push.id = 2
+		expect push.id == 2
 		expect req.url == "/hereyougo"
 		expect req.proto == "GET"
 		rxresp
-	} run
-} -start
+	} -run
+} -run
 
 server s1 -wait
