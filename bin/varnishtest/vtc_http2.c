@@ -456,7 +456,9 @@ receive_frame(void *priv) {
 			s->body[s->bodylen] = '\0';
 
 			vtc_log(hp->vl, 3, "s%lu - data: %s", s->id, f->data);
-		} else if (f->type == TYPE_HEADERS || f->type == TYPE_CONT) {
+		} else if (f->type == TYPE_HEADERS ||
+				f->type == TYPE_CONT ||
+				f->type == TYPE_PUSH) {
 			struct hpk_iter *iter;
 			enum hpk_result r = hpk_err;
 			int shift = 0;
@@ -475,6 +477,10 @@ receive_frame(void *priv) {
 
 				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
+			} else if (f->type == TYPE_PUSH){
+				shift = 4;
+				n = ntohl(*(uint32_t*)f->data);
+				f->md.promised = n & ~(1 << 31);
 			}
 			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
 
@@ -1389,6 +1395,8 @@ cmd_tx11obj(CMD_ARGS)
 		if (exclusive)
 			exclusive_stream_dependency(s);
 	}
+	if (f.type == TYPE_PUSH)
+		f.size += 4;
 	f.data = buf;	
 	HPK_FreeIter(iter);
 	write_frame(s->hp, &f, 1);
