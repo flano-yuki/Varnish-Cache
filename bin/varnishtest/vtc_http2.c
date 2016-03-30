@@ -1394,6 +1394,8 @@ cmd_tx11obj(CMD_ARGS)
 		if (exclusive)
 			exclusive_stream_dependency(s);
 	}
+	if (f.type == TYPE_PUSH)
+		f.size += 4;
 	f.data = buf;	
 	HPK_FreeIter(iter);
 	write_frame(s->hp, &f, 1);
