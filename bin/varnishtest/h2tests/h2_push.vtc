@@ -14,7 +14,7 @@ client c1 -connect ${s1_sock} {
 		rxpush
 		expect push.id == 2
 		expect req.url == "/hereyougo"
-		expect req.proto == "GET"
+		expect req.method == "GET"
 		rxresp
 	} -run
 } -run
