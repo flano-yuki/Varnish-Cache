@@ -4,14 +4,14 @@ server s1 {
 	stream 1 {
 		rxreq
 		txresp
-	} run
+	} -run
 } -start
 
 client c1 -connect ${s1_sock} {
 	stream 1 {
 		txreq
 		rxresp
-	} run
+	} -run
 } -start
 
 server s1 -wait
