@@ -1896,6 +1896,7 @@ cmd_rxhdrs(CMD_ARGS)
 
 	while (*++av) {
 		if (!strcmp(*av, "-some")) {
+			av++;
 			STRTOU32(times, *av, p, vl, "-some");
 			AN(times);
 		} else if (!strcmp(*av, "-all")) {
@@ -1906,7 +1907,7 @@ cmd_rxhdrs(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxhdrs spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
+	while (rcv++ < times || (loop && !(f->flags & END_HEADERS))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
@@ -1932,6 +1933,7 @@ cmd_rxcont(CMD_ARGS)
 
 	while (*++av) {
 		if (!strcmp(*av, "-some")) {
+			av++;
 			STRTOU32(times, *av, p, vl, "-some");
 		} else if (!strcmp(*av, "-all")) {
 			loop = 1;
@@ -1941,7 +1943,7 @@ cmd_rxcont(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxcont spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
+	while (rcv++ < times || (loop && !(f->flags & END_HEADERS))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
@@ -1980,6 +1982,7 @@ cmd_rxdata(CMD_ARGS)
 
 	while (*++av) {
 		if (!strcmp(*av, "-some")) {
+			av++;
 			STRTOU32(times, *av, p, vl, "-some");
 		} else if (!strcmp(*av, "-all")) {
 			loop = 1;
@@ -1989,7 +1992,7 @@ cmd_rxdata(CMD_ARGS)
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxdata spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(f->flags | END_STREAM))) {
+	while (rcv++ < times || (loop && !(f->flags & END_STREAM))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
@@ -2032,7 +2035,7 @@ cmd_rxreqsp(CMD_ARGS)
 
 	end_stream = f->flags & END_STREAM;
 
-	while (!(f->flags | END_HEADERS)) {
+	while (!(f->flags & END_HEADERS)) {
 		f = rxstuff(s);
 		if (!f)
 			return;
@@ -2077,6 +2080,7 @@ cmd_rxpush(CMD_ARGS) {
 
 	while (*++av) {
 		if (!strcmp(*av, "-some")) {
+			av++;
 			STRTOU32(times, *av, p, vl, "-some");
 			AN(times);
 		} else if (!strcmp(*av, "-all")) {
@@ -2087,7 +2091,7 @@ cmd_rxpush(CMD_ARGS) {
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown rxpush spec: %s\n", *av);
 
-	while (rcv++ < times || (loop && !(f->flags | END_HEADERS))) {
+	while (rcv++ < times || (loop && !(f->flags & END_HEADERS))) {
 		f = rxstuff(s);
 		if (!f)
 			return;
