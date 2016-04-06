@@ -1223,6 +1223,8 @@ cmd_http_expect_close(CMD_ARGS)
 	AZ(av[1]);
 
 	vtc_log(vl, 4, "Expecting close (fd = %d)", hp->fd);
+	if (hp->h2)
+		stop_h2(hp);
 	while (1) {
 		fds[0].fd = hp->fd;
 		fds[0].events = POLLIN | POLLERR;
@@ -1262,6 +1264,8 @@ cmd_http_close(CMD_ARGS)
 	AZ(av[1]);
 	assert(hp->sfd != NULL);
 	assert(*hp->sfd >= 0);
+	if (hp->h2)
+		stop_h2(hp);
 	VTCP_close(&hp->fd);
 	vtc_log(vl, 4, "Closed");
 }
@@ -1281,6 +1285,8 @@ cmd_http_accept(CMD_ARGS)
 	AZ(av[1]);
 	assert(hp->sfd != NULL);
 	assert(*hp->sfd >= 0);
+	if (hp->h2)
+		stop_h2(hp);
 	if (hp->fd >= 0)
 		VTCP_close(&hp->fd);
 	vtc_log(vl, 4, "Accepting");
