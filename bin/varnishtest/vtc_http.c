@@ -1209,6 +1209,11 @@ cmd_http_timeout(CMD_ARGS)
  * expect other end to close (server only)
  */
 
+/* SECTION: h1.both.spec.expect_close expect_close (server)
+ *
+ * Reads from the connection, expecting nothing to read but an EOF.
+ *
+ */
 static void
 cmd_http_expect_close(CMD_ARGS)
 {
@@ -1253,6 +1258,12 @@ cmd_http_expect_close(CMD_ARGS)
  * close a new connection  (server only)
  */
 
+/* SECTION: h1.both.spec.close close (server)
+ *
+ * Close the connection. Not that if operating in H/2 mode, no extra (GOAWAY)
+ * frame is sent, it's simply a TCP close.
+ *
+ */
 static void
 cmd_http_close(CMD_ARGS)
 {
@@ -1274,6 +1285,11 @@ cmd_http_close(CMD_ARGS)
  * close and accept a new connection  (server only)
  */
 
+/* SECTION: h1.both.spec.accept accept (server)
+ *
+ * Close the potential current connection, and accept a new one. Note that this
+ * new connection is H/1.
+ */
 static void
 cmd_http_accept(CMD_ARGS)
 {
