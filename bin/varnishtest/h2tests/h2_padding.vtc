@@ -7,6 +7,15 @@ server s1 {
 		sendhex "00 00 04 01 0c 00 00 00 01 02 88 12 34"
 		# DATA "foo" + 4 padding bytes
 		sendhex "00 00 08 00 09 00 00 00 01 04 66 6f 6f 6e 6e 6e 6e"
+
+	} -run
+
+	stream 3 {
+		rxreq
+		txresp -nostrend
+		txdata -data "bull" -pad "frog" -nostrend
+		txdata -data "terrier" -padlen 17
+		txdata -datalen 4 -padlen 2
 	} -run
 } -start
 
@@ -16,5 +25,21 @@ client c1 -connect ${s1_sock} {
 		rxresp
 		expect resp.bodylen == 3
 		expect resp.body == "foo"
+	} -run
+
+	stream 3 {
+		txreq
+		rxhdrs
+		
+		rxdata
+		expect frame.size == 9
+		expect resp.body == "bull"
+		
+		rxdata
+		expect frame.size == 25
+		expect resp.body == "bullterrier"
+
+		rxdata
+		expect frame.size == 7
 	} -run
 } -run
