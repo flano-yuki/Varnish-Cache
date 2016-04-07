@@ -1,0 +1,21 @@
+server s1 {
+	stream 1 {
+		rxreq
+		txresp -status 100 -hdr 1 1 -nostrend
+		txresp -status 200 -hdr 2 2
+	} -run
+} -start
+
+client c1 -connect ${s1_sock} {
+	stream 1 {
+		txreq -url "/" -req POST -hdr Expect 100-continue -body "foo"
+		rxresp
+		expect resp.status == 100
+		expect resp.http.1 == 1
+		rxresp
+		expect resp.status == 200
+		expect resp.http.2 == 2
+	} -run
+} -run
+
+server s1 -wait

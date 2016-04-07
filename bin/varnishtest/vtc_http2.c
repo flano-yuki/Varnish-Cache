@@ -2013,6 +2013,7 @@ cmd_rxreqsp(CMD_ARGS)
 {
 	struct stream *s;
 	struct frame *f;
+	const char *status;
 	int end_stream;
 	int rcv = 0;
 
@@ -2043,6 +2044,13 @@ cmd_rxreqsp(CMD_ARGS)
 		CHKFRAME(f->type, TYPE_CONT, rcv, *av);
 	}
 
+	if (s->hp->sfd == NULL && !end_stream){
+		status = find_header(s->resp, ":status", strlen(":status"));
+		if (status != NULL && status[0] == '1') {
+			s->frame = f;
+			return;
+		}
+	}
 	while (!end_stream && (f = rxstuff(s))) {
 		rcv++;
 		CHKFRAME(f->type, TYPE_DATA, rcv, *av);
