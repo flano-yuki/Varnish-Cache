@@ -1,0 +1,20 @@
+varnishtest "padded DATA frames"
+
+server s1 {
+	stream 1 {
+		rxreq
+		# HDR indexed ":status: 200" + 2 padding bytes
+		sendhex "00 00 04 01 0c 00 00 00 01 02 88 12 34"
+		# DATA "foo" + 4 padding bytes
+		sendhex "00 00 08 00 09 00 00 00 01 04 66 6f 6f 6e 6e 6e 6e"
+	} -run
+} -start
+
+client c1 -connect ${s1_sock} {
+	stream 1 {
+		txreq
+		rxresp
+		expect resp.bodylen == 3
+		expect resp.body == "foo"
+	} -run
+} -run
