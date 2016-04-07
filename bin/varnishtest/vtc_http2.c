@@ -1510,8 +1510,10 @@ static void
 cmd_txdata(CMD_ARGS)
 {
 	struct stream *s;
+	char *pad = NULL;
 	struct frame f;
 	char *body = NULL;
+	char *data = NULL;
 	(void)cmd;
 
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -1520,8 +1522,17 @@ cmd_txdata(CMD_ARGS)
 
 	while (*++av) {
 		if (!strcmp(*av, "-data")) {
-			body = strdup(av[1]);
 			av++;
+			body = strdup(*av);
+		} else if (!strcmp(*av, "-pad")) {
+			AZ(pad);
+			av++;
+			AN(*av);
+			pad = strdup(*av);
+		} else if (!strcmp(*av, "-padlen")) {
+			AZ(pad);
+			av++;
+			pad = synth_body(*av, 0);
 		} else if (!strcmp(*av, "-nostrend"))
 			f.flags &= ~END_STREAM;
 		else
@@ -1533,10 +1544,28 @@ cmd_txdata(CMD_ARGS)
 	if (!body)
 		body = strdup("");
 
-	f.size = strlen(body);
-	f.data = body;
+	if (pad) {
+		f.flags |= PADDED;
+		if (strlen(pad) >= 128)
+			vtc_log(s->hp->vl, 0, "Padding is limited to 128 bytes");
+		data = malloc( 1 + strlen(body) + strlen(pad));
+		*((uint8_t *)data) = strlen(pad);
+		f.size = 1;
+		vtc_log(s->hp->vl, 4, "writing (%s)@%d", body, f.size);
+		memcpy(data + f.size, body, strlen(body));
+		f.size += strlen(body);
+		vtc_log(s->hp->vl, 4, "writing (%s)@%d", pad, f.size);
+		memcpy(data + f.size, pad, strlen(pad));
+		f.size += strlen(pad);
+		f.data = data;
+	} else {
+		f.size = strlen(body);
+		f.data = body;
+	}
 	write_frame(s->hp, &f, 1);
 	free(body);
+	free(pad);
+	free(data);
 }
 
 /* SECTION: h2.streams.spec.reset_txrst txrst
