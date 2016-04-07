@@ -512,7 +512,6 @@ receive_frame(void *priv) {
 			s->bodylen += size;
 			s->body[s->bodylen] = '\0';
 
-			vtc_log(hp->vl, 4, "============= %c, %d", data[2], f->md.padded);
 			vtc_dump(hp->vl, 3, "DATA", data, size);
 		} else if (f->type == TYPE_HEADERS ||
 				f->type == TYPE_CONT ||
