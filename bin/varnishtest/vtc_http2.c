@@ -1085,7 +1085,7 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 }
 
 static void
-cmd_txframe(CMD_ARGS)
+cmd_sendhex(CMD_ARGS)
 {
 	struct http *hp;
 	struct stream *s;
@@ -1118,10 +1118,10 @@ cmd_txframe(CMD_ARGS)
 		buf[i] = (uint8_t)strtoul(tmp, NULL, 16);
 	}
 	AZ(pthread_mutex_lock(&hp->mtx));
-	http_write(hp, 4, buf, size, "txframe");
+	http_write(hp, 4, buf, i, "sendhex");
 
 	AZ(pthread_mutex_unlock(&hp->mtx));
-	vtc_hexdump(vl, 4, "txframe", (void *)buf, size);
+	vtc_hexdump(vl, 4, "sendhex", (void *)buf, size);
 }
 
 static void
@@ -2330,7 +2330,7 @@ cmd_h2_fatal(CMD_ARGS)
  */
 static const struct cmds stream_cmds[] = {
 	{ "expect",		cmd_http_expect },
-	{ "txframe",		cmd_txframe },
+	{ "sendhex",		cmd_sendhex },
 	{ "rxframe",		cmd_rxframe },
 	{ "txdata",		cmd_txdata },
 	{ "rxdata",		cmd_rxdata },
