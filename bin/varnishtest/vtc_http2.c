@@ -1500,11 +1500,16 @@ cmd_tx11obj(CMD_ARGS)
  * and txdata automatically set it.
  *
  * \-data STRING
- *         Data to be embedded into the frame
+ *         Data to be embedded into the frame.
+ *
+ * \-pad STRING / -padlen INT
+ *         Add string as padding to the frame, either the one you provided with
+ *         \-pad, or one that is generated for you, of length INT is -padlen
+ *         case.
  *
  * \-nostrend
  *         Don't set the END_STREAM flag, allowing to send more data on this
- *         stream
+ *         stream.
  */
 static void
 cmd_txdata(CMD_ARGS)
