@@ -120,7 +120,6 @@ enum {
 	PADDED = 0x8,
 	END_HEADERS = 0x4,
 	PRIORITY = 0x20,
-
 };
 
 struct stream {
@@ -377,6 +376,43 @@ exclusive_stream_dependency(struct stream *s)
 	}
 }
 
+static void
+explain_flags(uint8_t flags, uint8_t type, struct vtclog *vl) {
+	if (flags & ACK && (type == TYPE_PING || type == TYPE_SETTINGS)) {
+		vtc_log(vl, 3, "flag: ACK");
+		flags &= ~ACK;
+	}
+	if (flags & END_STREAM &&
+			(type == TYPE_HEADERS ||
+			 type == TYPE_PUSH ||
+			 type == TYPE_DATA)) {
+		vtc_log(vl, 3, "flag: END_STREAM");
+		flags &= ~END_STREAM;
+	}
+	if (flags & END_HEADERS &&
+			(type == TYPE_HEADERS ||
+			 type == TYPE_PUSH ||
+			 type == TYPE_CONT)) {
+		vtc_log(vl, 3, "flag: END_TYPE_HEADERS");
+		flags &= ~END_HEADERS;
+	}
+	if (flags & PRIORITY &&
+			(type == TYPE_HEADERS ||
+			 type == TYPE_PUSH)) {
+		vtc_log(vl, 3, "flag: END_PRIORITY");
+		flags &= ~PRIORITY;
+	}
+	if (flags & PADDED &&
+			(type == TYPE_DATA ||
+			 type == TYPE_HEADERS ||
+			 type == TYPE_PUSH)) {
+		vtc_log(vl, 3, "flag: PADDED");
+		flags &= ~PADDED;
+	}
+	if (flags)
+		vtc_log(vl, 3, "UNKNOWN FLAG(S): 0x%02x", flags);
+}
+
 /* read a frame and queue it in the relevant stream, wait if not present yet.
  */
 static void *
@@ -412,6 +448,7 @@ receive_frame(void *priv) {
 		vtc_log(hp->vl, 3, "rx: stream: %d, type: %s (%d), "
 				"flags: 0x%02x, size: %d",
 				f->stid, type, f->type, f->flags, f->size);
+		explain_flags(f->flags, f->type, hp->vl);
 
 		if (f->size) {
 			f->data = malloc(f->size + 1);
@@ -502,11 +539,10 @@ receive_frame(void *priv) {
 				if (r == hpk_err )
 					break;
 				vtc_log(hp->vl, 4,
-						"s%lu - header: %s : %s (%d)",
-						s->id,
+						"header[%2d]: %s : %s",
+						n,
 						h[n].key.ptr,
-						h[n].value.ptr,
-						n);
+						h[n].value.ptr);
 				n++;
 				if (r == hpk_done)
 					break;
