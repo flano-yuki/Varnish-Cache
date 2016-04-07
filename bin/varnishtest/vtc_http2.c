@@ -254,6 +254,7 @@ struct frame {
 		}		goaway;
 		uint32_t	winup_size;
 		uint32_t	promised;
+		uint8_t		padded;
 	} md;
 };
 
@@ -476,26 +477,43 @@ receive_frame(void *priv) {
 		AZ(pthread_mutex_unlock(&hp->mtx));
 		/* parse the frame according to it type, and fill the metada */
 		if (f->type == TYPE_DATA) {
-			if (!f->size) {
-				vtc_log(hp->vl, 4, "s%lu - no data", s->id);
+			uint32_t size = f->size;
+			char *data = f->data;
+			if (f->flags & PADDED) {
+				f->md.padded = *((uint8_t *)data);
+				if (f->md.padded >= size) {
+					vtc_log(hp->vl, hp->fatal,
+							"invalid padding: %d reported,"
+							"but size is only %d",
+							f->md.padded, size);
+					size = 0;
+					f->md.padded = 0;
+				}
+				data++;
+				size -= f->md.padded + 1;
+				vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
 			}
+
+			if (!size)
+				vtc_log(hp->vl, 4, "s%lu - no data", s->id);
 
 			if (s->id)
-				s->ws -= f->size;
-			s->hp->ws -= f->size;
+				s->ws -= size;
+			s->hp->ws -= size;
 
 			if (s->body) {
-				s->body = realloc(s->body, s->bodylen + f->size + 1);
+				s->body = realloc(s->body, s->bodylen + size + 1);
 			} else {
 				AZ(s->bodylen);
-				s->body = malloc(f->size + 1);
+				s->body = malloc(size + 1);
 			}
 			AN(s->body);
-			memcpy(s->body + s->bodylen, f->data, f->size);
-			s->bodylen += f->size;
+			memcpy(s->body + s->bodylen, data, size);
+			s->bodylen += size;
 			s->body[s->bodylen] = '\0';
 
-			vtc_log(hp->vl, 3, "s%lu - data: %s", s->id, f->data);
+			vtc_log(hp->vl, 4, "============= %c, %d", data[2], f->md.padded);
+			vtc_dump(hp->vl, 3, "DATA", data, size);
 		} else if (f->type == TYPE_HEADERS ||
 				f->type == TYPE_CONT ||
 				f->type == TYPE_PUSH) {
@@ -505,8 +523,26 @@ receive_frame(void *priv) {
 			int exclusive = 0;
 			int n;
 			struct hpk_hdr *h;
+			uint32_t size = f->size;
+			char *data = f->data;
+
+			if (f->flags & PADDED && f->type != TYPE_CONT) {
+				f->md.padded = *((uint8_t *)data);
+				if (f->md.padded >= size) {
+					vtc_log(hp->vl, hp->fatal,
+							"invalid padding: %d reported,"
+							"but size is only %d",
+							f->md.padded, size);
+					size = 0;
+					f->md.padded = 0;
+				}
+				shift += 1;
+				size -= f->md.padded;
+				vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
+			}
+
 			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
-				shift = 5;
+				shift += 5;
 				n = ntohl(*(uint32_t*)f->data);
 				s->dependency = n & ~(1 << 31);
 				exclusive = n >> 31;
@@ -518,11 +554,11 @@ receive_frame(void *priv) {
 				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
 				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 			} else if (f->type == TYPE_PUSH){
-				shift = 4;
+				shift += 4;
 				n = ntohl(*(uint32_t*)f->data);
 				f->md.promised = n & ~(1 << 31);
 			}
-			iter = HPK_NewIter(s->hp->decctx, f->data + shift, f->size - shift);
+			iter = HPK_NewIter(s->hp->decctx, data + shift, size - shift);
 
 			if (hp->sfd || s->expect_push)
 				h = s->req;
