@@ -1502,6 +1502,9 @@ cmd_tx11obj(CMD_ARGS)
  * \-data STRING
  *         Data to be embedded into the frame.
  *
+ * \-datalen INT
+ *         Generate and INT-bytes long string to be sent in the frame.
+ *
  * \-pad STRING / -padlen INT
  *         Add string as padding to the frame, either the one you provided with
  *         \-pad, or one that is generated for you, of length INT is -padlen
