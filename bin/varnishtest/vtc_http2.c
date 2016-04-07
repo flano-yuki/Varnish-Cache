@@ -458,6 +458,7 @@ receive_frame(void *priv) {
 		}
 
 		/* is the corresponding stream waiting? */
+		AZ(pthread_mutex_lock(&hp->mtx));
 		s = NULL;
 		while (!s) {
 			VTAILQ_FOREACH(s, &hp->streams, list) {
@@ -468,9 +469,11 @@ receive_frame(void *priv) {
 				AZ(pthread_cond_wait(&hp->cond, &hp->mtx));
 			if (!hp->h2) {
 				clean_frame(&f);
+				AZ(pthread_mutex_unlock(&hp->mtx));
 				return (NULL);
 			}
 		}
+		AZ(pthread_mutex_unlock(&hp->mtx));
 		/* parse the frame according to it type, and fill the metada */
 		if (f->type == TYPE_DATA) {
 			if (!f->size) {
