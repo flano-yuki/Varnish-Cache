@@ -672,9 +672,10 @@ do { \
 } while (0)
 
 static char *
-find_header(const struct hpk_hdr *h, char *k, int kl) {
+find_header(const struct hpk_hdr *h, char *k) {
 	AN(k);
 
+	int kl = strlen(k);
 	while (h->t) {
 		if (kl == h->key.len  && !memcmp(h->key.ptr, k, kl))
 			return h->value.ptr;
@@ -989,18 +990,17 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "bodylen"))
 			RETURN_BUFFED(s->bodylen);
 		else if (!strcmp(spec, "status"))
-			return (find_header(h, ":status", strlen(":status")));
+			return (find_header(h, ":status"));
 		else if (!strcmp(spec, "url"))
-			return (find_header(h, ":path", strlen(":path")));
+			return (find_header(h, ":path"));
 		else if (!strcmp(spec, "method"))
-			return (find_header(h, ":method", strlen(":method")));
+			return (find_header(h, ":method"));
 		else if (!strcmp(spec, "authority"))
-			return (find_header(h, ":authority",
-						strlen(":authority")));
+			return (find_header(h, ":authority"));
 		else if (!strcmp(spec, "scheme"))
-			return (find_header(h, ":scheme", strlen(":scheme")));
+			return (find_header(h, ":scheme"));
 		else if (!strncmp(spec, "http.", 5))
-			return (find_header(h, spec + 5, strlen(spec + 5)));
+			return (find_header(h, spec + 5));
 		else
 			return (NULL);
 	}
