@@ -1083,6 +1083,14 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	return(NULL);
 }
 
+/* SECTION: h2.streams.spec.frame.sendhex sendhex
+ *
+ * Push bytes directly on the wire. sendhex takes exactly one argument: a string
+ * describing the bytes, in hex notation, will possible whitespaces between
+ * them. Here's an example::
+ *
+ *         sendhex "00 00 08 00 0900       8d"
+ */
 static void
 cmd_sendhex(CMD_ARGS)
 {
@@ -2226,6 +2234,10 @@ RXFUNC(goaway,	GOAWAY)
  */
 RXFUNC(winup,	WINUP)
 
+/* SECTION: h2.streams.spec.frame.rxframe
+ *
+ * Receive a frame, any frame.
+ */
 static void
 cmd_rxframe(CMD_ARGS) {
 	struct stream *s;
