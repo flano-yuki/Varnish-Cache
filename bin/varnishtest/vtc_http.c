@@ -1404,7 +1404,7 @@ cmd_http_stream(CMD_ARGS)
 	struct http *hp = (struct http *)priv;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 	if (!hp->h2) {
-		vtc_log(hp->vl, 4, "Not in H/2 mode node, do what's needed");
+		vtc_log(hp->vl, 4, "Not in H/2 mode, do what's needed");
 		if (hp->sfd)
 			parse_string("rxpri", http_cmds, hp, vl);
 		else
