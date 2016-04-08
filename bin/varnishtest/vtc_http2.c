@@ -1233,6 +1233,11 @@ clean_headers(struct hpk_hdr *h) {
  *
  * \-promised INT (txpush)
  *         The id of the promised stream.
+ *
+ * \-pad STRING / -padlen INT (txreq, txresp, txpush)
+ *         Add string as padding to the frame, either the one you provided with
+ *         \-pad, or one that is generated for you, of length INT is -padlen
+ *         case.
  */
 static void
 cmd_tx11obj(CMD_ARGS)
