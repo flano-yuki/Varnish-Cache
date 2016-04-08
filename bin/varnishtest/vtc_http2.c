@@ -944,6 +944,15 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 		else if (!strcmp(spec, "type"))   { RETURN_BUFFED(f->type); }
 		else if (!strcmp(spec, "size"))	  { RETURN_BUFFED(f->size); }
 		else if (!strcmp(spec, "stream")) { RETURN_BUFFED(f->stid); }
+		else if (!strcmp(spec, "padding")) {
+			if (f->type != TYPE_DATA &&
+					f->type != TYPE_HEADERS &&
+					f->type != TYPE_PUSH)
+				vtc_log(s->hp->vl, 0,
+						"Last frame was not of type "
+						"DATA, HEADERS or PUSH");
+			RETURN_BUFFED(f->md.padded);
+		}
 	}
 	/* SECTION: h2.streams.spec.zexpect.zstream Stream
 	 * stream.window
