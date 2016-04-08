@@ -930,11 +930,14 @@ cmd_var_resolve(struct stream *s, char *spec, char *buf)
 	 *         Type of the frame, as integer.
 	 *
 	 * frame.size
-	 *         Size of the frame
+	 *         Size of the frame.
 	 *
 	 * frame.stream
 	 *         Stream of the frame (correspond to the one you are executing
 	 *         this from, obviously).
+	 *
+	 * frame.padding (for DATA, HEADERS, PUSH frames)
+	 *         Number of padded bytes.
 	 */
 	else if (!strncmp(spec, "frame.", 6)) {
 		spec += 6;
