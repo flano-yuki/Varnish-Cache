@@ -1249,7 +1249,7 @@ cmd_tx11obj(CMD_ARGS)
 	uint32_t *ubuf = (uint32_t *)buf;
 	struct hpk_iter *iter;
 	struct frame f;
-	char *body = NULL;
+	char *body = NULL, *pad = NULL;
 	/*XXX: do we need a better api? yes we do */
 	struct hpk_hdr hdr;
 	char *cmd_str = *av;
@@ -1441,6 +1441,16 @@ cmd_tx11obj(CMD_ARGS)
 						"(found %s)", *av);
 			}
 			*ubuf = htonl(pstid);
+		} else if (!strcmp(*av, "-pad") && strcmp(cmd_str, "txcont")) {
+				AZ(pad);
+				av++;
+				AN(*av);
+				pad = strdup(*av);
+		} else if (!strcmp(*av, "-padlen") &&
+				strcmp(cmd_str, "txcont")) {
+				AZ(pad);
+				av++;
+				pad = synth_body(*av, 0);
 		} else
 			break;
 	}
@@ -1462,7 +1472,7 @@ cmd_tx11obj(CMD_ARGS)
 		ENC(hdr, ":scheme", "http");
 
 	f.size = gethpk_iterLen(iter);
-	if (f.flags & PRIORITY){
+	if (f.flags & PRIORITY) {
 		s->weight = weight & 0xff;
 		s->dependency = stid;
 
@@ -1476,6 +1486,19 @@ cmd_tx11obj(CMD_ARGS)
 		vtc_log(s->hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 		if (exclusive)
 			exclusive_stream_dependency(s);
+	}
+	if (pad) {
+		if (strlen(pad) >= 128)
+			vtc_log(s->hp->vl, 0,
+					"Padding is limited to 128 bytes");
+		f.flags |= PADDED;
+		assert(f.size + strlen(pad) < 1024*2048);
+		memmove(buf + 1, buf, f.size);
+		*((uint8_t *)ubuf) = strlen(pad);
+		f.size += 1;
+		memcpy(buf + f.size, pad, strlen(pad));
+		f.size += strlen(pad);
+		free(pad);
 	}
 	if (f.type == TYPE_PUSH)
 		f.size += 4;
@@ -1564,10 +1587,8 @@ cmd_txdata(CMD_ARGS)
 		data = malloc( 1 + strlen(body) + strlen(pad));
 		*((uint8_t *)data) = strlen(pad);
 		f.size = 1;
-		vtc_log(s->hp->vl, 4, "writing (%s)@%d", body, f.size);
 		memcpy(data + f.size, body, strlen(body));
 		f.size += strlen(body);
-		vtc_log(s->hp->vl, 4, "writing (%s)@%d", pad, f.size);
 		memcpy(data + f.size, pad, strlen(pad));
 		f.size += strlen(pad);
 		f.data = data;

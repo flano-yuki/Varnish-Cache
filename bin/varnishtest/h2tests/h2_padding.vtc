@@ -17,6 +17,11 @@ server s1 {
 		txdata -data "terrier" -padlen 17
 		txdata -datalen 4 -padlen 2
 	} -run
+
+	stream 5 {
+		rxreq
+		txresp -pad "pwepew"
+	} -run
 } -start
 
 client c1 -connect ${s1_sock} {
@@ -41,5 +46,10 @@ client c1 -connect ${s1_sock} {
 
 		rxdata
 		expect frame.size == 7
+	} -run
+
+	stream 5 {
+		txreq
+		rxresp
 	} -run
 } -run
