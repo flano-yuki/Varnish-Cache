@@ -1568,7 +1568,7 @@ cmd_tx11obj(CMD_ARGS)
 			break;
 	}
 	if (*av != NULL)
-		vtc_log(s->hp->vl, 0, "Unknown %s spec: %s\n", cmd_str, *av);
+		vtc_log(vl, 0, "Unknown %s spec: %s\n", cmd_str, *av);
 
 	hdr.t = hpk_not;
 	hdr.i = 0;
@@ -1595,14 +1595,14 @@ cmd_tx11obj(CMD_ARGS)
 		buf[4] = s->weight;
 		f.size += 5;
 
-		vtc_log(s->hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
-		vtc_log(s->hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
+		vtc_log(vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
+		vtc_log(vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
 		if (exclusive)
 			exclusive_stream_dependency(s);
 	}
 	if (pad) {
 		if (strlen(pad) >= 128)
-			vtc_log(s->hp->vl, 0,
+			vtc_log(vl, 0,
 					"Padding is limited to 128 bytes");
 		f.flags |= PADDED;
 		assert(f.size + strlen(pad) < 1024*2048);
@@ -1696,7 +1696,7 @@ cmd_txdata(CMD_ARGS)
 	if (pad) {
 		f.flags |= PADDED;
 		if (strlen(pad) >= 128)
-			vtc_log(s->hp->vl, 0, "Padding is limited to 128 bytes");
+			vtc_log(vl, 0, "Padding is limited to 128 bytes");
 		data = malloc( 1 + strlen(body) + strlen(pad));
 		*((uint8_t *)data) = strlen(pad);
 		f.size = 1;
@@ -2744,7 +2744,7 @@ cmd_stream(CMD_ARGS)
 			continue;
 		}
 		if (**av == '-')
-			vtc_log(s->hp->vl, 0, "Unknown client argument: %s", *av);
+			vtc_log(vl, 0, "Unknown client argument: %s", *av);
 		REPLACE(s->spec, *av);
 	}
 }
