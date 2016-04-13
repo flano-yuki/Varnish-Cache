@@ -414,6 +414,296 @@ explain_flags(uint8_t flags, uint8_t type, struct vtclog *vl) {
 		vtc_log(vl, 3, "UNKNOWN FLAG(S): 0x%02x", flags);
 }
 
+static void
+parse_data(struct stream *s, struct frame *f) {
+	struct http *hp;
+	uint32_t size = f->size;
+	char *data = f->data;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->flags & PADDED) {
+		f->md.padded = *((uint8_t *)data);
+		if (f->md.padded >= size) {
+			vtc_log(hp->vl, hp->fatal,
+					"invalid padding: %d reported,"
+					"but size is only %d",
+					f->md.padded, size);
+			size = 0;
+			f->md.padded = 0;
+		}
+		data++;
+		size -= f->md.padded + 1;
+		vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
+	}
+
+	if (!size)
+		vtc_log(hp->vl, 4, "s%lu - no data", s->id);
+
+	if (s->id)
+		s->ws -= size;
+	s->hp->ws -= size;
+
+	if (s->body) {
+		s->body = realloc(s->body, s->bodylen + size + 1);
+	} else {
+		AZ(s->bodylen);
+		s->body = malloc(size + 1);
+	}
+	AN(s->body);
+	memcpy(s->body + s->bodylen, data, size);
+	s->bodylen += size;
+	s->body[s->bodylen] = '\0';
+}
+
+static void
+parse_hdr(struct stream *s, struct frame *f) {
+	struct http *hp;
+	struct hpk_iter *iter;
+	enum hpk_result r = hpk_err;
+	int shift = 0;
+	int exclusive = 0;
+	int n;
+	struct hpk_hdr *h;
+	uint32_t size = f->size;
+	char *data = f->data;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->flags & PADDED && f->type != TYPE_CONT) {
+		f->md.padded = *((uint8_t *)data);
+		if (f->md.padded >= size) {
+			vtc_log(hp->vl, hp->fatal,
+					"invalid padding: %d reported,"
+					"but size is only %d",
+					f->md.padded, size);
+			size = 0;
+			f->md.padded = 0;
+		}
+		shift += 1;
+		size -= f->md.padded;
+		vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
+	}
+
+	if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
+		shift += 5;
+		n = ntohl(*(uint32_t*)f->data);
+		s->dependency = n & ~(1 << 31);
+		exclusive = n >> 31;
+
+		s->weight = f->data[4];
+		if (exclusive)
+			exclusive_stream_dependency(s);
+
+		vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
+		vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
+	} else if (f->type == TYPE_PUSH){
+		shift += 4;
+		n = ntohl(*(uint32_t*)f->data);
+		f->md.promised = n & ~(1 << 31);
+	}
+	iter = HPK_NewIter(s->hp->decctx, data + shift, size - shift);
+
+	if (hp->sfd || s->expect_push)
+		h = s->req;
+	else
+		h = s->resp;
+
+	/* as soon as the headers are done, fall bak to regular
+	 * operation mode */
+	if (f->flags & END_HEADERS)
+		s->expect_push = 0;
+
+	n = 0;
+	while (n < MAX_HDR && h[n].t)
+		n++;
+	while (n < MAX_HDR) {
+		r = HPK_DecHdr(iter, h + n);
+		if (r == hpk_err )
+			break;
+		vtc_log(hp->vl, 4,
+				"header[%2d]: %s : %s",
+				n,
+				h[n].key.ptr,
+				h[n].value.ptr);
+		n++;
+		if (r == hpk_done)
+			break;
+	}
+	//XXX document too many headers errors
+	if (r != hpk_done)
+		vtc_log(hp->vl, hp->fatal ? 4 : 0,
+				"Header decoding failed (%d)",
+				hp->fatal);
+	HPK_FreeIter(iter);
+
+}
+
+static void
+parse_prio(struct stream *s, struct frame *f) {
+	struct http *hp;
+	char *buf;
+	int n;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->size != 5)
+		vtc_log(hp->vl, 0, "Size should be 5, but isn't (%d)", f->size);
+
+	buf = f->data;
+	AN(buf);
+
+	n = ntohl(*(uint32_t*)f->data);
+	f->md.prio.stream = n & ~(1 << 31);
+
+	s->dependency = f->md.prio.stream;
+	if (n >> 31){
+		f->md.prio.exclusive = 1;
+		exclusive_stream_dependency(s);
+	}
+
+	buf += 4;
+	f->md.prio.weight = *buf;
+	s->weight = f->md.prio.weight;
+
+	vtc_log(hp->vl, 3, "s%lu - prio->stream: %u", s->id, f->md.prio.stream);
+	vtc_log(hp->vl, 3, "s%lu - prio->weight: %u", s->id, f->md.prio.weight);
+}
+
+static void
+parse_rst(struct stream *s, struct frame *f) {
+	struct http *hp;
+	uint32_t err;
+	const char *buf;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->size != 4)
+		vtc_log(hp->vl, 0, "Size should be 4, but isn't (%d)", f->size);
+
+	err = ntohl(*(uint32_t*)f->data);
+	f->md.rst_err = err;
+
+	vtc_log(hp->vl, 2, "ouch");
+	if (err <= ERR_MAX)
+		buf = h2_errs[err];
+	else
+		buf = "unknown";
+	vtc_log(hp->vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+
+}
+
+static void
+parse_settings(struct stream *s, struct frame *f) {
+	struct http *hp;
+	int i, t, v;
+	const char *buf;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->size % 6)
+		vtc_log(hp->vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
+
+	for (i = 0; i <= SETTINGS_MAX; i++)
+		f->md.settings[i] = NAN;
+
+	for (i = 0; i < f->size;) {
+		t = ntohs(*(uint16_t *)(f->data + i));
+		i += 2;
+		v = ntohl(*(uint32_t *)(f->data + i));
+		if (t <= SETTINGS_MAX) {
+			buf = h2_settings[t];
+			f->md.settings[t] = v;
+		} else
+			buf = "unknown";
+		i += 4;
+
+		if (t == 1 )
+			HPK_ResizeTbl(s->hp->encctx, v);
+
+		vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+	}
+
+}
+
+static void
+parse_ping(struct stream *s, struct frame *f) {
+	struct http *hp;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+	if (f->size != 8)
+		vtc_log(hp->vl, 0, "Size should be 8, but isn't (%d)", f->size);
+	f->md.ping.ack = f->flags & 1;
+	memcpy(f->md.ping.data, f->data, 8);
+	f->md.ping.data[8] = '\0';
+
+	vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
+
+}
+
+static void
+parse_goaway(struct stream *s, struct frame *f) {
+	struct http *hp;
+	const char *err_buf;
+	uint32_t err, stid;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->size < 8)
+		vtc_log(hp->vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
+		vtc_log(hp->vl, 0, "First bit of data is reserved and should be 0");
+
+	stid = ntohl(((uint32_t*)f->data)[0]);
+	err = ntohl(((uint32_t*)f->data)[1]);
+	f->md.goaway.err = err;
+	f->md.goaway.stream = stid;
+
+	if (err <= ERR_MAX)
+		err_buf = h2_errs[err];
+	else
+		err_buf = "unknown";
+
+	if (f->size > 8) {
+		f->md.goaway.debug = malloc(f->size - 8 + 1);
+		AN(f->md.goaway.debug);
+		f->md.goaway.debug[f->size - 8] = '\0';
+
+		memcpy(f->md.goaway.debug, f->data + 8, f->size - 8);
+	}
+
+	vtc_log(hp->vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
+	vtc_log(hp->vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
+	if (f->md.goaway.debug)
+		vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, f->md.goaway.debug);
+}
+
+static void
+parse_winup(struct stream *s, struct frame *f) {
+	struct http *hp;
+	uint32_t size;
+	CHECK_OBJ_NOTNULL(f, FRAME_MAGIC);
+	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
+	CAST_OBJ_NOTNULL(hp, s->hp, HTTP_MAGIC);;
+
+	if (f->size != 4)
+		vtc_log(hp->vl, 0, "Size should be 4, but isn't (%d)", f->size);
+	if (f->data[0] & (1<<7))
+		vtc_log(hp->vl, s->hp->fatal, "First bit of data is reserved and should be 0");
+
+	size = ntohl(*(uint32_t*)f->data);
+	f->md.winup_size = size;
+
+	vtc_log(hp->vl, 3, "s%lu - winup->size: %d", s->id, size);
+}
+
 /* read a frame and queue it in the relevant stream, wait if not present yet.
  */
 static void *
@@ -476,233 +766,33 @@ receive_frame(void *priv) {
 		}
 		AZ(pthread_mutex_unlock(&hp->mtx));
 		/* parse the frame according to it type, and fill the metada */
-		if (f->type == TYPE_DATA) {
-			uint32_t size = f->size;
-			char *data = f->data;
-			if (f->flags & PADDED) {
-				f->md.padded = *((uint8_t *)data);
-				if (f->md.padded >= size) {
-					vtc_log(hp->vl, hp->fatal,
-							"invalid padding: %d reported,"
-							"but size is only %d",
-							f->md.padded, size);
-					size = 0;
-					f->md.padded = 0;
-				}
-				data++;
-				size -= f->md.padded + 1;
-				vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
-			}
-
-			if (!size)
-				vtc_log(hp->vl, 4, "s%lu - no data", s->id);
-
-			if (s->id)
-				s->ws -= size;
-			s->hp->ws -= size;
-
-			if (s->body) {
-				s->body = realloc(s->body, s->bodylen + size + 1);
-			} else {
-				AZ(s->bodylen);
-				s->body = malloc(size + 1);
-			}
-			AN(s->body);
-			memcpy(s->body + s->bodylen, data, size);
-			s->bodylen += size;
-			s->body[s->bodylen] = '\0';
-
-		} else if (f->type == TYPE_HEADERS ||
-				f->type == TYPE_CONT ||
-				f->type == TYPE_PUSH) {
-			struct hpk_iter *iter;
-			enum hpk_result r = hpk_err;
-			int shift = 0;
-			int exclusive = 0;
-			int n;
-			struct hpk_hdr *h;
-			uint32_t size = f->size;
-			char *data = f->data;
-
-			if (f->flags & PADDED && f->type != TYPE_CONT) {
-				f->md.padded = *((uint8_t *)data);
-				if (f->md.padded >= size) {
-					vtc_log(hp->vl, hp->fatal,
-							"invalid padding: %d reported,"
-							"but size is only %d",
-							f->md.padded, size);
-					size = 0;
-					f->md.padded = 0;
-				}
-				shift += 1;
-				size -= f->md.padded;
-				vtc_log(hp->vl, 4, "padding: %3d", f->md.padded);
-			}
-
-			if (f->type == TYPE_HEADERS && f->flags & PRIORITY){
-				shift += 5;
-				n = ntohl(*(uint32_t*)f->data);
-				s->dependency = n & ~(1 << 31);
-				exclusive = n >> 31;
-
-				s->weight = f->data[4];
-				if (exclusive)
-					exclusive_stream_dependency(s);
-
-				vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
-				vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
-			} else if (f->type == TYPE_PUSH){
-				shift += 4;
-				n = ntohl(*(uint32_t*)f->data);
-				f->md.promised = n & ~(1 << 31);
-			}
-			iter = HPK_NewIter(s->hp->decctx, data + shift, size - shift);
-
-			if (hp->sfd || s->expect_push)
-				h = s->req;
-			else
-				h = s->resp;
-
-			/* as soon as the headers are done, fall bak to regular
-			 * operation mode */
-			if (f->flags & END_HEADERS)
-				s->expect_push = 0;
-
-			n = 0;
-			while (n < MAX_HDR && h[n].t)
-				n++;
-			while (n < MAX_HDR) {
-				r = HPK_DecHdr(iter, h + n);
-				if (r == hpk_err )
-					break;
-				vtc_log(hp->vl, 4,
-						"header[%2d]: %s : %s",
-						n,
-						h[n].key.ptr,
-						h[n].value.ptr);
-				n++;
-				if (r == hpk_done)
-					break;
-			}
-			//XXX document too many headers errors
-			if (r != hpk_done)
-				vtc_log(hp->vl, hp->fatal ? 4 : 0,
-						"Header decoding failed (%d)",
-						hp->fatal);
-			HPK_FreeIter(iter);
-		} else if (f->type == TYPE_PRIORITY) {
-			char *buf;
-			int n;
-			if (f->size != 5)
-				vtc_log(hp->vl, 0, "Size should be 5, but isn't (%d)", f->size);
-
-			buf = f->data;
-			AN(buf);
-
-			n = ntohl(*(uint32_t*)f->data);
-			f->md.prio.stream = n & ~(1 << 31);
-
-			s->dependency = f->md.prio.stream;
-			if (n >> 31){
-				f->md.prio.exclusive = 1;
-				exclusive_stream_dependency(s);
-			}
-
-			buf += 4;
-			f->md.prio.weight = *buf;
-			s->weight = f->md.prio.weight;
-
-			vtc_log(hp->vl, 3, "s%lu - prio->stream: %u", s->id, f->md.prio.stream);
-			vtc_log(hp->vl, 3, "s%lu - prio->weight: %u", s->id, f->md.prio.weight);
-		} if (f->type == TYPE_RST) {
-			uint32_t err;
-			const char *buf;
-			if (f->size != 4)
-				vtc_log(hp->vl, 0, "Size should be 4, but isn't (%d)", f->size);
-
-			err = ntohl(*(uint32_t*)f->data);
-			f->md.rst_err = err;
-
-			vtc_log(hp->vl, 2, "ouch");
-			if (err <= ERR_MAX)
-				buf = h2_errs[err];
-			else
-				buf = "unknown";
-			vtc_log(hp->vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
-		} else if (f->type == TYPE_SETTINGS) {
-			int i, t, v;
-			const char *buf;
-			if (f->size % 6)
-				vtc_log(hp->vl, 0, "Size should be a multiple of 6, but isn't (%d)", f->size);
-
-			for (i = 0; i <= SETTINGS_MAX; i++)
-				f->md.settings[i] = NAN;
-
-			for (i = 0; i < f->size;) {
-				t = ntohs(*(uint16_t *)(f->data + i));
-				i += 2;
-				v = ntohl(*(uint32_t *)(f->data + i));
-				if (t <= SETTINGS_MAX) {
-					buf = h2_settings[t];
-					f->md.settings[t] = v;
-				} else
-					buf = "unknown";
-				i += 4;
-
-				if (t == 1 )
-					HPK_ResizeTbl(s->hp->encctx, v);
-
-				vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
-			}
-		} else if (f->type == TYPE_PING) {
-			if (f->size != 8)
-				vtc_log(hp->vl, 0, "Size should be 8, but isn't (%d)", f->size);
-			f->md.ping.ack = f->flags & 1;
-			memcpy(f->md.ping.data, f->data, 8);
-			f->md.ping.data[8] = '\0';
-
-			vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
-		} else if (f->type == TYPE_GOAWAY) {
-			const char *err_buf;
-			uint32_t err, stid;
-			if (f->size < 8)
-				vtc_log(hp->vl, 0, "Size should be at least 8, but isn't (%d)", f->size);
-			if (f->data[0] & (1<<7))
-				vtc_log(hp->vl, 0, "First bit of data is reserved and should be 0");
-
-			stid = ntohl(((uint32_t*)f->data)[0]);
-			err = ntohl(((uint32_t*)f->data)[1]);
-			f->md.goaway.err = err;
-			f->md.goaway.stream = stid;
-
-			if (err <= ERR_MAX)
-				err_buf = h2_errs[err];
-			else
-				err_buf = "unknown";
-
-			if (f->size > 8) {
-				f->md.goaway.debug = malloc(f->size - 8 + 1);
-				AN(f->md.goaway.debug);
-				f->md.goaway.debug[f->size - 8] = '\0';
-
-				memcpy(f->md.goaway.debug, f->data + 8, f->size - 8);
-			}
-
-			vtc_log(hp->vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
-			vtc_log(hp->vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
-			if (f->md.goaway.debug)
-				vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, f->md.goaway.debug);
-		} else 	if (f->type == TYPE_WINUP) {
-			uint32_t size;
-			if (f->size != 4)
-				vtc_log(hp->vl, 0, "Size should be 4, but isn't (%d)", f->size);
-			if (f->data[0] & (1<<7))
-				vtc_log(hp->vl, s->hp->fatal, "First bit of data is reserved and should be 0");
-
-			size = ntohl(*(uint32_t*)f->data);
-			f->md.winup_size = size;
-
-			vtc_log(hp->vl, 3, "s%lu - winup->size: %d", s->id, size);
+		switch (f->type) {
+			case TYPE_DATA:
+				parse_data(s, f);
+				break;
+			case TYPE_HEADERS:
+			case TYPE_CONT:
+			case TYPE_PUSH:
+				parse_hdr(s, f);
+				break;
+			case TYPE_PRIORITY:
+				parse_prio(s, f);
+				break;
+			case TYPE_RST:
+				parse_rst(s, f);
+				break;
+			case TYPE_SETTINGS:
+				parse_settings(s, f);
+				break;
+			case TYPE_PING:
+				parse_ping(s, f);
+				break;
+			case TYPE_GOAWAY:
+				parse_goaway(s, f);
+				break;
+			case TYPE_WINUP:
+				parse_winup(s, f);
+				break;
 		}
 
 		VTAILQ_INSERT_HEAD(&s->fq, f, list);
