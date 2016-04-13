@@ -2537,10 +2537,6 @@ static const struct cmds stream_cmds[] = {
 	{ "rxcont",		cmd_rxcont },
 	{ "delay",		cmd_delay },
 	{ "sema",		cmd_sema },
-	//timeout
-	//expect_close
-	//close
-	//accept
 	{ NULL,			NULL }
 };
 
