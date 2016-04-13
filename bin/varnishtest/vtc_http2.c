@@ -1394,6 +1394,8 @@ cmd_tx11obj(CMD_ARGS)
 	} else
 		iter = HPK_NewIter(s->hp->encctx, buf, 1024*2048);
 
+#define AV_IS(str) !strcmp(*av, str)
+#define CMD_IS(str) !strcmp(cmd_str, str)
 	while (*++av) {
 		hdr.t = hpk_not;
 		hdr.i = 0;
@@ -1403,61 +1405,64 @@ cmd_tx11obj(CMD_ARGS)
 		hdr.value.huff = 0;
 		hdr.value.ptr = NULL;
 		hdr.value.len = 0;
-		if (!strcmp(*av, "-noadd")) {
+		if (AV_IS("-noadd")) {
 			url_done = 1;
 			status_done = 1;
 			req_done = 1;
 			scheme_done = 1;
-		} else if (!strcmp(*av, "-status") &&
-				!strcmp(cmd_str, "txresp")) {
+		}
+		else if (AV_IS("-status") && CMD_IS("txresp")) {
 			ENC(hdr, ":status", av[1]);
 			av++;
 			status_done = 1;
-		} else if (!strcmp(*av, "-url") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txpush"))) {
+		}
+		else if (AV_IS("-url") &&
+				(CMD_IS("txreq") || CMD_IS("txpush"))) {
 			ENC(hdr, ":path", av[1]);
 			av++;
 			url_done = 1;
-		} else if (!strcmp(*av, "-req") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txpush"))) {
+		}
+		else if (AV_IS("-req") &&
+				(CMD_IS("txreq") || CMD_IS("txpush"))) {
 			ENC(hdr, ":method", av[1]);
 			av++;
 			req_done = 1;
-		} else if (!strcmp(*av, "-scheme") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txpush"))) {
+		}
+		else if (AV_IS("-scheme") &&
+				(CMD_IS("txreq") || CMD_IS("txpush"))) {
 			ENC(hdr, ":scheme", av[1]);
 			av++;
 			scheme_done = 1;
-		} else if (!strcmp(*av, "-hdr")) {
+		}
+		else if (AV_IS("-hdr")) {
 			ENC(hdr, av[1], av[2]);
 			av += 2;
-		} else if (!strcmp(*av, "-idxHdr")) {
+		}
+		else if (AV_IS("-idxHdr")) {
 			AN(++av);
 			hdr.t = hpk_idx;
 			STRTOU32(hdr.i, *av, p, vl, "-idxHdr");
 			HPK_EncHdr(iter, &hdr);
-		} else if (!strcmp(*av, "-litIdxHdr")) {
+		}
+		else if (AV_IS("-litIdxHdr")) {
 			av++;
-			if (!strcmp(*av, "inc")) {
-				hdr.t = hpk_inc;
-			} else if (!strcmp(*av, "not")) {
-				hdr.t = hpk_not;
-			} else if (!strcmp(*av, "never")) {
-				hdr.t = hpk_never;
-			} else
-				vtc_log(vl, 0, "first -litidxHdr arg can be inc, not, never (got: %s)", *av);
+			     if (AV_IS("inc"))   { hdr.t = hpk_inc;   }
+			else if (AV_IS("not"))   { hdr.t = hpk_not;   }
+			else if (AV_IS("never")) { hdr.t = hpk_never; }
+			else
+				vtc_log(vl, 0, "first -litidxHdr arg can be "
+						"inc, not, never (got: %s)",
+						*av);
 			av++;
 			AN(*av);
 			STRTOU32(hdr.i, *av, p, vl, "second -litidxHdr arg");
 			av++;
-			if (!strcmp(*av, "plain")) {
-			} else if (!strcmp(*av, "huf")) {
-				hdr.value.huff = 1;
-			} else
-				vtc_log(vl, 0, "third -litidxHdr arg can be huf or plain (got: %s)", *av);
+
+			     if (AV_IS("plain")) { hdr.value.huff = 0; }
+			else if (AV_IS("huf"))   { hdr.value.huff = 1; }
+			else
+				vtc_log(vl, 0, "third -litidxHdr arg can be huf"
+						" or plain (got: %s)", *av);
 			av++;
 			AN(*av);
 			hdr.key.ptr = NULL;
@@ -1465,103 +1470,101 @@ cmd_tx11obj(CMD_ARGS)
 			hdr.value.ptr = *av;
 			hdr.value.len = strlen(*av);
 			HPK_EncHdr(iter, &hdr);
-		} else if (!strcmp(*av, "-litHdr")) {
+		}
+		else if (AV_IS("-litHdr")) {
 			av++;
-			if (!strcmp(*av, "inc")) {
-				hdr.t = hpk_inc;
-			} else if (!strcmp(*av, "not")) {
-				hdr.t = hpk_not;
-			} else if (!strcmp(*av, "never")) {
-				hdr.t = hpk_never;
-			} else
-				vtc_log(vl, 0, "first -litHdr arg can be inc, not, never (got: %s)", *av);
+			     if (AV_IS("inc"))   { hdr.t = hpk_inc;   }
+			else if (AV_IS("not"))   { hdr.t = hpk_not;   }
+			else if (AV_IS("never")) { hdr.t = hpk_never; }
+			else
+				vtc_log(vl, 0, "first -litHdr arg can be inc, "
+						"not, never (got: %s)", *av);
 
 			av++;
-			if (!strcmp(*av, "plain")) {
-			} else if (!strcmp(*av, "huf")) {
-				hdr.key.huff = 1;
-			} else
-				vtc_log(vl, 0, "second -litHdr arg can be huf or plain (got: %s)", *av);
+			     if (AV_IS("plain")) { hdr.key.huff = 0; }
+			else if (AV_IS("huf"))   { hdr.key.huff = 1; }
+			else
+				vtc_log(vl, 0, "second -litHdr arg can be huf "
+						"or plain (got: %s)", *av);
 			av++;
 			AN(*av);
 			hdr.key.ptr = *av;
 			hdr.key.len = strlen(*av);
 
 			av++;
-			if (!strcmp(*av, "plain")) {
-			} else if (!strcmp(*av, "huf")) {
-				hdr.value.huff = 1;
-			} else
-				vtc_log(vl, 0, "fourth -litHdr arg can be huf or plain (got: %s)", *av);
+			     if (AV_IS("plain")) { hdr.value.huff = 0; }
+			else if (AV_IS("huf"))   { hdr.value.huff = 1; }
+			else
+				vtc_log(vl, 0, "fourth -litHdr arg can be huf "
+						"or plain (got: %s)", *av);
 			av++;
 			AN(*av);
 			hdr.value.ptr = *av;
 			hdr.value.len = strlen(*av);
-			vtc_log(vl, 4,"sending (%s)(%s)", hdr.key.ptr, hdr.value.ptr);
 			HPK_EncHdr(iter, &hdr);
-		} else if (!strcmp(*av, "-body") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-			AZ(body);
-			REPLACE(body, av[1]);
+		}
+		else if (AV_IS("-nostrend")) {
 			f.flags &= ~END_STREAM;
-			av++;
-		} else if (!strcmp(*av, "-bodylen") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-			AZ(body);
-			body = synth_body(av[1], 0);
-			f.flags &= ~END_STREAM;
-			av++;
-		} else if (!strcmp(*av, "-nostrend") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-			f.flags &= ~END_STREAM;
-		} else if (!strcmp(*av, "-nohdrend")) {
+		}
+		else if (AV_IS("-nohdrend")) {
 			f.flags &= ~END_HEADERS;
-		} else if (!strcmp(*av, "-dep") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-		        av++;
-		        STRTOU32(stid, *av, p, vl, "-dep");
-		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-ex") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-		        exclusive = 1 << 31;
-		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-weight") &&
-				(!strcmp(cmd_str, "txreq") ||
-				 !strcmp(cmd_str, "txresp"))) {
-		        av++;
-		        STRTOU32(weight, *av, p, vl, "-weight");
-		        if (weight >= 256)
-		                vtc_log(vl, 0,
-		                        "Weight must be a 8-bits integer "
-		                                "(found %s)", *av);
-		        f.flags |= PRIORITY;
-		} else if (!strcmp(*av, "-promised") &&
-				!strcmp(cmd_str, "txpush")) {
+		}
+		else if (AV_IS("-promised") && CMD_IS("txpush")) {
 			++av;
 			STRTOU32(pstid, *av, p, vl, "-promised");
 			if (pstid & (1 << 31)) {
-				vtc_log(vl, 0, "-promised must be a 31-bits integer "
-						"(found %s)", *av);
+				vtc_log(vl, 0, "-promised must be a 31-bits "
+						"integer (found %s)", *av);
 			}
 			*ubuf = htonl(pstid);
-		} else if (!strcmp(*av, "-pad") && strcmp(cmd_str, "txcont")) {
-				AZ(pad);
+		}
+		else if (AV_IS("-pad") && !CMD_IS("txcont")) {
+			AZ(pad);
+			av++;
+			AN(*av);
+			pad = strdup(*av);
+		}
+		else if (AV_IS("-padlen") && !CMD_IS("txcont")) {
+			AZ(pad);
+			av++;
+			pad = synth_body(*av, 0);
+		}
+		else if (CMD_IS("txreq") || CMD_IS("txresp")) {
+			if (AV_IS("-body")) {
+				AZ(body);
+				REPLACE(body, av[1]);
+				f.flags &= ~END_STREAM;
 				av++;
-				AN(*av);
-				pad = strdup(*av);
-		} else if (!strcmp(*av, "-padlen") &&
-				strcmp(cmd_str, "txcont")) {
-				AZ(pad);
+			}
+			else if (AV_IS("-bodylen")) {
+				AZ(body);
+				body = synth_body(av[1], 0);
+				f.flags &= ~END_STREAM;
 				av++;
-				pad = synth_body(*av, 0);
+			}else if (AV_IS("-dep")) {
+				av++;
+				STRTOU32(stid, *av, p, vl, "-dep");
+				f.flags |= PRIORITY;
+			}
+			else if (AV_IS("-ex")) {
+				exclusive = 1 << 31;
+				f.flags |= PRIORITY;
+			}
+			else if (AV_IS("-weight")) {
+				av++;
+				STRTOU32(weight, *av, p, vl, "-weight");
+				if (weight >= 256)
+					vtc_log(vl, 0, "Weight must be a 8-bits"
+							"integer (found %s)",
+							*av);
+				f.flags |= PRIORITY;
+			} else
+				break;
 		} else
 			break;
 	}
+#undef CMD_IS
+#undef AV_IS
 	if (*av != NULL)
 		vtc_log(vl, 0, "Unknown %s spec: %s\n", cmd_str, *av);
 
