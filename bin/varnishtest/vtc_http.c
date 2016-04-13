@@ -1365,13 +1365,14 @@ cmd_http_txpri(CMD_ARGS)
 {
 	size_t l;
 	struct http *hp;
+	(void)cmd;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 	ONLY_CLIENT(hp, av);
 
 	vtc_dump(hp->vl, 4, "txpri", PREFACE, sizeof(PREFACE) - 1);
 	l = write(hp->fd, PREFACE, sizeof(PREFACE) - 1);
 	if (l != sizeof(PREFACE) - 1)
-		vtc_log(hp->vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
+		vtc_log(vl, hp->fatal, "Write failed: (%zd vs %zd) %s",
 		    l, sizeof(PREFACE) - 1, strerror(errno));
 	start_h2(hp);
 	AN(hp->h2);
@@ -1386,14 +1387,15 @@ static void
 cmd_http_rxpri(CMD_ARGS)
 {
 	struct http *hp;
+	(void)cmd;
 	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
 	ONLY_SERVER(hp, av);
 
 	hp->prxbuf = 0;
 	if (!http_rxchar(hp, sizeof(PREFACE) - 1, 0))
-		vtc_log(hp->vl, 0, "Couldn't retrieve connection preface");
+		vtc_log(vl, 0, "Couldn't retrieve connection preface");
 	if (strncmp(hp->rxbuf, PREFACE, sizeof(PREFACE) - 1))
-		vtc_log(hp->vl, 0, "Received invalid preface\n");
+		vtc_log(vl, 0, "Received invalid preface\n");
 	start_h2(hp);
 	AN(hp->h2);
 }

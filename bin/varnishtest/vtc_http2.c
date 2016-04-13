@@ -854,7 +854,7 @@ do { \
 } while (0)
 
 static char *
-find_header(const struct hpk_hdr *h, char *k) {
+find_header(const struct hpk_hdr *h, const char *k) {
 	AN(k);
 
 	int kl = strlen(k);
@@ -2120,8 +2120,6 @@ rxstuff(struct stream *s) {
 
 #define CHKFRAME(rt, wt, rcv, func) \
 	do { \
-	assert(rt >= 0); \
-	assert(wt >= 0); \
 	if (rt != wt) \
 		vtc_log(vl, 0, "Frame #%d for %s was of type %s (%d) " \
 				"instead of %s (%d)", \
@@ -2498,21 +2496,6 @@ cmd_http_expect(CMD_ARGS)
 		vtc_log(vl, retval ? 4 : 0, "(s%ld) EXPECT %s (%s) %s \"%s\" %s",
 		    s->id, av[0], clhs, cmp, crhs, retval ? "match" : "failed");
 	AZ(pthread_mutex_unlock(&s->hp->mtx));
-}
-
-void
-cmd_h2_fatal(CMD_ARGS)
-{
-	struct http *hp;
-	CAST_OBJ_NOTNULL(hp, priv, HTTP_MAGIC);
-
-	AZ(av[1]);
-	if (!strcmp(av[0], "fatal"))
-		hp->fatal = 0;
-	else if (!strcmp(av[0], "non-fatal"))
-		hp->fatal = -1;
-	else
-		vtc_log(vl, 0, "XXX: fatal %s", cmd->name);
 }
 
 /* SECTION: h2.streams.spec Specification
