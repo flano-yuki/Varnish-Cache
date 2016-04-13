@@ -394,35 +394,30 @@ explain_flags(uint8_t flags, uint8_t type, struct vtclog *vl) {
 	if (flags & ACK && (type == TYPE_PING || type == TYPE_SETTINGS)) {
 		vtc_log(vl, 3, "flag: ACK");
 		flags &= ~ACK;
-	}
-	if (flags & END_STREAM &&
+	} else if (flags & END_STREAM &&
 			(type == TYPE_HEADERS ||
 			 type == TYPE_PUSH ||
 			 type == TYPE_DATA)) {
 		vtc_log(vl, 3, "flag: END_STREAM");
 		flags &= ~END_STREAM;
-	}
-	if (flags & END_HEADERS &&
+	} else if (flags & END_HEADERS &&
 			(type == TYPE_HEADERS ||
 			 type == TYPE_PUSH ||
 			 type == TYPE_CONT)) {
 		vtc_log(vl, 3, "flag: END_TYPE_HEADERS");
 		flags &= ~END_HEADERS;
-	}
-	if (flags & PRIORITY &&
+	} else if (flags & PRIORITY &&
 			(type == TYPE_HEADERS ||
 			 type == TYPE_PUSH)) {
 		vtc_log(vl, 3, "flag: END_PRIORITY");
 		flags &= ~PRIORITY;
-	}
-	if (flags & PADDED &&
+	} else if (flags & PADDED &&
 			(type == TYPE_DATA ||
 			 type == TYPE_HEADERS ||
 			 type == TYPE_PUSH)) {
 		vtc_log(vl, 3, "flag: PADDED");
 		flags &= ~PADDED;
-	}
-	if (flags)
+	} else if (flags)
 		vtc_log(vl, 3, "UNKNOWN FLAG(S): 0x%02x", flags);
 }
 
