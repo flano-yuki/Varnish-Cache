@@ -1380,7 +1380,7 @@ cmd_http_txpri(CMD_ARGS)
 
 /* SECTION: h1.both.spec.rxpri rxpri (server)
  *
- * Receive a preface, and if it matches, sets the server to H/2, abort fails
+ * Receive a preface, and if it matches, sets the server to H/2, aborts
  * otherwise.
  */
 static void
