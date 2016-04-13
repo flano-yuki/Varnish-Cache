@@ -1567,14 +1567,10 @@ cmd_tx11obj(CMD_ARGS)
 	hdr.key.huff = 0;
 	hdr.value.huff = 0;
 
-	if (!status_done)
-		ENC(hdr, ":status", "200");
-	if (!url_done)
-		ENC(hdr, ":path", "/");
-	if (!req_done)
-		ENC(hdr, ":method", "GET");
-	if (!scheme_done)
-		ENC(hdr, ":scheme", "http");
+	if (!status_done) { ENC(hdr, ":status", "200"); }
+	if (!url_done)    { ENC(hdr, ":path", "/"); }
+	if (!req_done)    { ENC(hdr, ":method", "GET"); }
+	if (!scheme_done) { ENC(hdr, ":scheme", "http"); }
 
 	f.size = gethpk_iterLen(iter);
 	if (f.flags & PRIORITY) {
@@ -1594,8 +1590,7 @@ cmd_tx11obj(CMD_ARGS)
 	}
 	if (pad) {
 		if (strlen(pad) >= 128)
-			vtc_log(vl, 0,
-					"Padding is limited to 128 bytes");
+			vtc_log(vl, 0, "Padding is limited to 128 bytes");
 		f.flags |= PADDED;
 		assert(f.size + strlen(pad) < 1024*2048);
 		memmove(buf + 1, buf, f.size);
