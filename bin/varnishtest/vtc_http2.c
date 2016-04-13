@@ -504,8 +504,8 @@ parse_hdr(struct stream *s, struct frame *f) {
 		if (exclusive)
 			exclusive_stream_dependency(s);
 
-		vtc_log(hp->vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
-		vtc_log(hp->vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
+		vtc_log(hp->vl, 4, "stream->dependency: %u", s->dependency);
+		vtc_log(hp->vl, 4, "stream->weight: %u", s->weight);
 	} else if (f->type == TYPE_PUSH){
 		shift += 4;
 		n = ntohl(*(uint32_t*)f->data);
@@ -576,8 +576,8 @@ parse_prio(struct stream *s, struct frame *f) {
 	f->md.prio.weight = *buf;
 	s->weight = f->md.prio.weight;
 
-	vtc_log(hp->vl, 3, "s%lu - prio->stream: %u", s->id, f->md.prio.stream);
-	vtc_log(hp->vl, 3, "s%lu - prio->weight: %u", s->id, f->md.prio.weight);
+	vtc_log(hp->vl, 3, "prio->stream: %u", f->md.prio.stream);
+	vtc_log(hp->vl, 3, "prio->weight: %u", f->md.prio.weight);
 }
 
 static void
@@ -600,7 +600,7 @@ parse_rst(struct stream *s, struct frame *f) {
 		buf = h2_errs[err];
 	else
 		buf = "unknown";
-	vtc_log(hp->vl, 4, "s%lu - rst->err: %s (%d)", s->id, buf, err);
+	vtc_log(hp->vl, 4, "rst->err: %s (%d)", buf, err);
 
 }
 
@@ -633,7 +633,7 @@ parse_settings(struct stream *s, struct frame *f) {
 		if (t == 1 )
 			HPK_ResizeTbl(s->hp->encctx, v);
 
-		vtc_log(hp->vl, 4, "s%lu - settings->%s (%d): %d", s->id, buf, t, v);
+		vtc_log(hp->vl, 4, "settings->%s (%d): %d", buf, t, v);
 	}
 
 }
@@ -650,7 +650,7 @@ parse_ping(struct stream *s, struct frame *f) {
 	memcpy(f->md.ping.data, f->data, 8);
 	f->md.ping.data[8] = '\0';
 
-	vtc_log(hp->vl, 4, "s%lu - ping->data: %s", s->id, f->md.ping.data);
+	vtc_log(hp->vl, 4, "ping->data: %s", f->md.ping.data);
 
 }
 
@@ -686,10 +686,10 @@ parse_goaway(struct stream *s, struct frame *f) {
 		memcpy(f->md.goaway.debug, f->data + 8, f->size - 8);
 	}
 
-	vtc_log(hp->vl, 3, "s%lu - goaway->laststream: %d", s->id, stid);
-	vtc_log(hp->vl, 3, "s%lu - goaway->err: %s (%d)", s->id, err_buf, err);
+	vtc_log(hp->vl, 3, "goaway->laststream: %d", stid);
+	vtc_log(hp->vl, 3, "goaway->err: %s (%d)", err_buf, err);
 	if (f->md.goaway.debug)
-		vtc_log(hp->vl, 3, "s%lu - goaway->debug: %s", s->id, f->md.goaway.debug);
+		vtc_log(hp->vl, 3, "goaway->debug: %s", f->md.goaway.debug);
 }
 
 static void
@@ -708,7 +708,7 @@ parse_winup(struct stream *s, struct frame *f) {
 	size = ntohl(*(uint32_t*)f->data);
 	f->md.winup_size = size;
 
-	vtc_log(hp->vl, 3, "s%lu - winup->size: %d", s->id, size);
+	vtc_log(hp->vl, 3, "winup->size: %d", size);
 }
 
 /* read a frame and queue it in the relevant stream, wait if not present yet.
@@ -1590,8 +1590,8 @@ cmd_tx11obj(CMD_ARGS)
 		buf[4] = s->weight;
 		f.size += 5;
 
-		vtc_log(vl, 4, "s%lu - stream->dependency: %u", s->id, s->dependency);
-		vtc_log(vl, 4, "s%lu - stream->weight: %u", s->id, s->weight);
+		vtc_log(vl, 4, "stream->dependency: %u", s->dependency);
+		vtc_log(vl, 4, "stream->weight: %u", s->weight);
 		if (exclusive)
 			exclusive_stream_dependency(s);
 	}
