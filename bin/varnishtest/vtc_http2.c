@@ -339,7 +339,6 @@ static void
 write_frame(struct http *hp, struct frame *f, unsigned lock)
 {
 	ssize_t l;
-	const char *type;
 	char hdr[9];
 
 	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
@@ -347,13 +346,11 @@ write_frame(struct http *hp, struct frame *f, unsigned lock)
 
 	writeFrameHeader(hdr, f);
 
-	if (f->type <= TYPE_MAX)
-		type = h2_types[f->type];
-	else
-		type = "?";
 	vtc_log(hp->vl, 3, "tx: stream: %d, type: %s (%d), "
 			"flags: 0x%02x, size: %d",
-			f->stid, type, f->type, f->flags, f->size);
+			f->stid,
+			f->type < TYPE_MAX ? h2_types[f->type] : "?",
+			f->type, f->flags, f->size);
 
 	if (lock)
 		AZ(pthread_mutex_lock(&hp->mtx));
@@ -719,7 +716,6 @@ receive_frame(void *priv) {
 	char hdr[9];
 	struct frame *f;
 	struct stream *s;
-	const char *type;
 
 	CHECK_OBJ_NOTNULL(hp, HTTP_MAGIC);
 
@@ -739,13 +735,11 @@ receive_frame(void *priv) {
 		ALLOC_OBJ(f, FRAME_MAGIC);
 		readFrameHeader(f, hdr);
 
-		if (f->type <= TYPE_MAX)
-			type = h2_types[f->type];
-		else
-			type = "UNKNOWN";
 		vtc_log(hp->vl, 3, "rx: stream: %d, type: %s (%d), "
 				"flags: 0x%02x, size: %d",
-				f->stid, type, f->type, f->flags, f->size);
+				f->stid,
+				f->type < TYPE_MAX ? h2_types[f->type] : "?",
+				f->type, f->flags, f->size);
 		explain_flags(f->flags, f->type, hp->vl);
 
 		if (f->size) {
@@ -2122,8 +2116,8 @@ rxstuff(struct stream *s) {
 		vtc_log(vl, 0, "Frame #%d for %s was of type %s (%d) " \
 				"instead of %s (%d)", \
 				rcv, func, \
-				rt < TYPE_MAX ? h2_types[rt] : "UNKNOWN", rt, \
-			       	wt < TYPE_MAX ? h2_types[wt] : "UNKNOWN", wt); \
+				rt < TYPE_MAX ? h2_types[rt] : "?", rt, \
+			       	wt < TYPE_MAX ? h2_types[wt] : "?", wt); \
 	} while (0);
 
 /* SECTION: h2.streams.spec.data_12 rxhdrs
