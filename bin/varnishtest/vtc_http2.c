@@ -149,6 +149,18 @@ struct stream {
 	int			expect_push;
 };
 
+static void
+clean_headers(struct hpk_hdr *h) {
+	while (h->t) {
+		if (h->key.len)
+			free(h->key.ptr);
+		if (h->value.len)
+			free(h->value.ptr);
+		memset(h, 0, sizeof(*h));
+		h++;
+	}
+}
+
 #define ONLY_CLIENT(hp, av)						\
 	do {								\
 		if (hp->sfd != NULL)					\
@@ -771,8 +783,11 @@ receive_frame(void *priv) {
 				parse_data(s, f);
 				break;
 			case TYPE_HEADERS:
+				if (hp->sfd)
+					clean_headers(s->resp);
+				else
+					clean_headers(s->req);
 			case TYPE_CONT:
-			case TYPE_PUSH:
 				parse_hdr(s, f);
 				break;
 			case TYPE_PRIORITY:
@@ -783,6 +798,10 @@ receive_frame(void *priv) {
 				break;
 			case TYPE_SETTINGS:
 				parse_settings(s, f);
+				break;
+			case TYPE_PUSH:
+				clean_headers(s->req);
+				parse_hdr(s, f);
 				break;
 			case TYPE_PING:
 				parse_ping(s, f);
@@ -1230,18 +1249,6 @@ cmd_sendhex(CMD_ARGS)
 
 	AZ(pthread_mutex_unlock(&hp->mtx));
 	vtc_hexdump(vl, 4, "sendhex", (void *)buf, size);
-}
-
-static void
-clean_headers(struct hpk_hdr *h) {
-	while (h->t) {
-		if (h->key.len)
-			free(h->key.ptr);
-		if (h->value.len)
-			free(h->value.ptr);
-		memset(h, 0, sizeof(*h));
-		h++;
-	}
 }
 
 #define ENC(hdr, k, v) \
@@ -2112,11 +2119,16 @@ rxstuff(struct stream *s) {
 }
 
 #define CHKFRAME(rt, wt, rcv, func) \
-	if (rt != wt) { \
-		vtc_log(vl, 0, "Frame #%d for %s was of type %d" \
-				"instead of %d", \
-				rcv, func, rt, wt); \
-	}
+	do { \
+	assert(rt >= 0); \
+	assert(wt >= 0); \
+	if (rt != wt) \
+		vtc_log(vl, 0, "Frame #%d for %s was of type %s (%d) " \
+				"instead of %s (%d)", \
+				rcv, func, \
+				rt < TYPE_MAX ? h2_types[rt] : "UNKNOWN", rt, \
+			       	wt < TYPE_MAX ? h2_types[wt] : "UNKNOWN", wt); \
+	} while (0);
 
 /* SECTION: h2.streams.spec.data_12 rxhdrs
  *
