@@ -538,9 +538,7 @@ parse_hdr(struct stream *s, struct frame *f) {
 	}
 	//XXX document too many headers errors
 	if (r != hpk_done)
-		vtc_log(hp->vl, hp->fatal ? 4 : 0,
-				"Header decoding failed (%d)",
-				hp->fatal);
+		vtc_log(hp->vl, "Header decoding failed (%d)", hp->fatal);
 	HPK_FreeIter(iter);
 
 }
