@@ -100,7 +100,7 @@ static const char *h2_settings[] = {
 	NULL
 };
 
-enum {
+enum h2_type {
 	TYPE_DATA,
 	TYPE_HEADERS,
 	TYPE_PRIORITY,
@@ -2136,8 +2136,7 @@ cmd_rxhdrs(CMD_ARGS)
 	int loop = 0;
 	int times = 1;
 	int rcv = 0;
-	// XXX make it an enum
-	int expect = TYPE_HEADERS;
+	enum h2_type expect = TYPE_HEADERS;
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -2319,8 +2318,7 @@ cmd_rxpush(CMD_ARGS) {
 	int loop = 0;
 	int times = 1;
 	int rcv = 0;
-	// XXX make it an enum
-	int expect = TYPE_PUSH;
+	enum h2_type expect = TYPE_PUSH;
 
 	(void)cmd;
 	CAST_OBJ_NOTNULL(s, priv, STREAM_MAGIC);
@@ -2582,7 +2580,6 @@ stream_delete(struct stream *s)
 	CHECK_OBJ_NOTNULL(s, STREAM_MAGIC);
 	free(s->spec);
 	free(s->name);
-	/* XXX: MEMLEAK (?)*/
 	FREE_OBJ(s);
 }
 
@@ -2602,7 +2599,6 @@ stream_start(struct stream *s)
 /**********************************************************************
  * Wait for stream thread to stop
  */
-//TODO clean ->fq too
 static void
 stream_wait(struct stream *s)
 {
