@@ -536,11 +536,15 @@ parse_hdr(struct stream *s, struct frame *f) {
 		if (r == hpk_done)
 			break;
 	}
-	//XXX document too many headers errors
-	if (r != hpk_done)
-		vtc_log(hp->vl, "Header decoding failed (%d)", hp->fatal);
-	HPK_FreeIter(iter);
 
+	if (r != hpk_done)
+		vtc_log(hp->vl, hp->fatal ? 4 : 0,
+				"Header decoding failed (%d) %d", r, hp->fatal);
+	else if (n == MAX_HDR)
+		vtc_log(hp->vl, hp->fatal,
+				"Max number of headers reached (%d)", MAX_HDR);
+
+	HPK_FreeIter(iter);
 }
 
 static void
